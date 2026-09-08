@@ -3,12 +3,31 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>WARKOP RR - Kasir Pro</title>
+  <title>WARKOP RR - Enterprise POS & Live Monitor</title>
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#12161A">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <link rel="stylesheet" href="style.css">
+  <style>
+    /* Styling Tambahan Khusus Dashboard Monitoring */
+    .pulse-dot {
+      width: 10px; height: 10px; background-color: #10B981; border-radius: 50%;
+      display: inline-block; animation: pulseLive 1.5s infinite;
+    }
+    @keyframes pulseLive {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+      70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+    }
+    .badge-cenderawasih { background-color: #0284C7; color: #fff; font-size: 0.7rem; }
+    .badge-mappaoddang { background-color: #D97706; color: #fff; font-size: 0.7rem; }
+    .metric-card-owner {
+      background: linear-gradient(145deg, #1A202C, #141824);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+    }
+  </style>
 </head>
 <body class="theme-dark">
 
@@ -18,27 +37,27 @@
       <div class="text-center mb-4">
         <div class="brand-logo">☕</div>
         <h4 class="fw-bold text-white mb-1">WARKOP RR</h4>
-        <small class="text-secondary">Enterprise Multi-Branch POS</small>
+        <small class="text-secondary">Enterprise Multi-Branch Monitoring</small>
       </div>
       
       <form id="loginForm" onsubmit="handleAuthLogin(event)">
         <div class="mb-3">
           <label class="form-label text-light small">Username</label>
-          <input type="text" id="loginUsername" class="form-control form-control-dark" placeholder="Username kasir" required autocomplete="username">
+          <input type="text" id="loginUsername" class="form-control form-control-dark" placeholder="Username kasir/owner" required autocomplete="username">
         </div>
         <div class="mb-3">
           <label class="form-label text-light small">Password</label>
           <input type="password" id="loginPassword" class="form-control form-control-dark" placeholder="Password" required autocomplete="current-password">
         </div>
-        <div class="mb-4">
-          <label class="form-label text-light small">Pilih Shift</label>
+        <div class="mb-4" id="wrapShiftSelect">
+          <label class="form-label text-light small">Pilih Shift (Khusus Kasir)</label>
           <select id="loginShift" class="form-select form-select-dark">
             <option value="Pagi">Shift Pagi</option>
             <option value="Malam">Shift Malam</option>
           </select>
         </div>
         <button type="submit" id="btnLoginSubmit" class="btn btn-primary-custom w-100 py-2 fw-semibold">
-          Masuk ke Kasir
+          Masuk ke Sistem
         </button>
       </form>
     </div>
@@ -51,12 +70,12 @@
         <span class="fs-5">☕</span>
         <div>
           <h6 class="mb-0 fw-bold text-white lh-1">WARKOP RR</h6>
-          <small class="user-badge" id="headerUserLabel">Cabang: -</small>
+          <small class="user-badge" id="headerUserLabel">Memuat...</small>
         </div>
       </div>
 
       <div class="d-flex align-items-center gap-2">
-        <div class="lembur-toggle d-flex align-items-center px-2 py-1">
+        <div class="lembur-toggle d-flex align-items-center px-2 py-1" id="wrapLembur">
           <input type="checkbox" id="checkLembur" class="form-check-input me-1 m-0">
           <label for="checkLembur" class="small text-white m-0">Lembur</label>
         </div>
@@ -67,7 +86,71 @@
     </header>
 
     <main class="app-content pb-5 mb-4">
-      <!-- VIEW 1: MENU POS -->
+
+      <!-- VIEW 0: MONITORING DASHBOARD (UTAMA UNTUK OWNER) -->
+      <section id="viewDashboard" class="tab-view">
+        <div class="container-fluid px-3 pt-2">
+          
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="d-flex align-items-center gap-2">
+              <span class="pulse-dot"></span>
+              <h6 class="fw-bold text-white mb-0">Live Monitor Transaksi</h6>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+              <small class="text-secondary" id="lastUpdatedTimer" style="font-size: 0.75rem;">Sync: Baru saja</small>
+              <button class="btn btn-sm btn-outline-custom" onclick="loadLiveMonitorData(true)">
+                <i class="bi bi-arrow-clockwise"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Metrik Ringkas Hari Ini -->
+          <div class="row g-2 mb-3">
+            <div class="col-6">
+              <div class="metric-card-owner p-2 text-center">
+                <small class="text-secondary" style="font-size:0.75rem;">Omset Gabungan Hari Ini</small>
+                <div class="fw-bold text-accent fs-5" id="monTotalOmset">Rp 0</div>
+                <small class="text-success" id="monNetCash" style="font-size:0.7rem;">Kas Bersih: Rp 0</small>
+              </div>
+            </div>
+            <div class="col-6">
+              <div class="metric-card-owner p-2 text-center">
+                <small class="text-secondary" style="font-size:0.75rem;">Total Transaksi Live</small>
+                <div class="fw-bold text-white fs-5" id="monTotalTrx">0 Struk</div>
+                <small class="text-warning" id="monTotalPiutang" style="font-size:0.7rem;">Piutang: Rp 0</small>
+              </div>
+            </div>
+          </div>
+
+          <!-- Komparasi Antar Cabang -->
+          <div class="row g-2 mb-3">
+            <div class="col-6">
+              <div class="card bg-dark-card border-0 p-2" style="border-left: 3px solid #0284C7 !important;">
+                <div class="fw-bold text-white small text-truncate">Cenderawasih</div>
+                <div class="fw-bold text-info fs-6" id="monCenOmset">Rp 0</div>
+                <small class="text-secondary" id="monCenTrx" style="font-size:0.7rem;">0 Transaksi</small>
+              </div>
+            </div>
+            <div class="col-6">
+              <div class="card bg-dark-card border-0 p-2" style="border-left: 3px solid #D97706 !important;">
+                <div class="fw-bold text-white small text-truncate">Mappaoddang</div>
+                <div class="fw-bold text-warning fs-6" id="monMapOmset">Rp 0</div>
+                <small class="text-secondary" id="monMapTrx" style="font-size:0.7rem;">0 Transaksi</small>
+              </div>
+            </div>
+          </div>
+
+          <!-- Feed Transaksi Real-time Masuk -->
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="fw-bold text-white mb-0 small">Aktivitas Transaksi Masuk (Terbaru)</h6>
+            <span class="badge bg-dark text-secondary" id="monActiveBadge">50 Transaksi Terakhir</span>
+          </div>
+          <div id="liveOrderFeedList" class="cart-scroll-area" style="max-height: 52vh;"></div>
+
+        </div>
+      </section>
+
+      <!-- VIEW 1: MENU POS (UTAMA UNTUK KASIR) -->
       <section id="viewMenu" class="tab-view active">
         <div class="px-3 pt-2">
           <div class="search-input-wrap mb-2">
@@ -86,7 +169,7 @@
         </div>
       </section>
 
-      <!-- VIEW 2: CHECKOUT CART -->
+      <!-- VIEW 2: KERANJANG CHECKOUT -->
       <section id="viewCart" class="tab-view">
         <div class="container-fluid px-3 pt-2">
           <div class="card bg-dark-card border-0 p-3 mb-3">
@@ -129,7 +212,6 @@
               </div>
             </div>
 
-            <!-- Kalkulator Tunai -->
             <div id="cashCalcArea">
               <label class="small text-secondary mb-1">Uang Diterima (Rp)</label>
               <input type="number" id="inputCashPaid" class="form-control form-control-dark mb-2" placeholder="0" oninput="calcChange()">
@@ -152,7 +234,7 @@
         </div>
       </section>
 
-      <!-- VIEW 3: RIWAYAT / LOG PENJUALAN -->
+      <!-- VIEW 3: RIWAYAT / LOG KASIR -->
       <section id="viewHistory" class="tab-view">
         <div class="container-fluid px-3 pt-2">
           <div class="d-flex justify-content-between align-items-center mb-2">
@@ -173,24 +255,109 @@
           <div id="kasbonListContainer"></div>
         </div>
       </section>
+
+      <!-- VIEW 5: LAPORAN RINCI OWNER -->
+      <section id="viewReport" class="tab-view">
+        <div class="container-fluid px-3 pt-2">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h6 class="fw-bold text-white mb-0">Laporan Keuangan Audit</h6>
+            <button class="btn btn-sm btn-outline-custom" onclick="loadOwnerReport()"><i class="bi bi-arrow-clockwise"></i></button>
+          </div>
+
+          <div class="card bg-dark-card border-0 p-3 mb-3">
+            <div class="row g-2">
+              <div class="col-6">
+                <label class="small text-secondary mb-1">Filter Cabang</label>
+                <select id="reportFilterCabang" class="form-select form-select-dark form-select-sm" onchange="loadOwnerReport()">
+                  <option value="Semua">Semua Cabang (Konsolidasi)</option>
+                  <option value="Cabang Cenderawasih">Cabang Cenderawasih</option>
+                  <option value="Cabang Mappaoddang">Cabang Mappaoddang</option>
+                </select>
+              </div>
+              <div class="col-6">
+                <label class="small text-secondary mb-1">Tanggal</label>
+                <input type="date" id="reportFilterDate" class="form-control form-control-dark form-control-sm" onchange="loadOwnerReport()">
+              </div>
+            </div>
+          </div>
+
+          <div class="row g-2 mb-3">
+            <div class="col-6">
+              <div class="card bg-dark-card border-0 p-2 text-center">
+                <small class="text-secondary" style="font-size:0.75rem;">Omset Bruto</small>
+                <div class="fw-bold text-accent" id="repOmsetKotor">Rp 0</div>
+              </div>
+            </div>
+            <div class="col-6">
+              <div class="card bg-dark-card border-0 p-2 text-center">
+                <small class="text-secondary" style="font-size:0.75rem;">Laba Bersih Kas</small>
+                <div class="fw-bold text-success" id="repLabaBersih">Rp 0</div>
+              </div>
+            </div>
+            <div class="col-4">
+              <div class="card bg-dark-card border-0 p-2 text-center">
+                <small class="text-secondary" style="font-size:0.7rem;">Tunai</small>
+                <div class="fw-bold text-white small" id="repTunai">Rp 0</div>
+              </div>
+            </div>
+            <div class="col-4">
+              <div class="card bg-dark-card border-0 p-2 text-center">
+                <small class="text-secondary" style="font-size:0.7rem;">QRIS</small>
+                <div class="fw-bold text-info small" id="repQris">Rp 0</div>
+              </div>
+            </div>
+            <div class="col-4">
+              <div class="card bg-dark-card border-0 p-2 text-center">
+                <small class="text-secondary" style="font-size:0.7rem;">Pengeluaran</small>
+                <div class="fw-bold text-danger small" id="repPengeluaran">Rp 0</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card bg-dark-card border-0 p-3 mb-3">
+            <div class="d-flex justify-content-between mb-1 small">
+              <span class="text-secondary">Kasbon Diterbitkan:</span>
+              <span class="text-warning fw-bold" id="repKasbonHariIni">Rp 0</span>
+            </div>
+            <div class="d-flex justify-content-between mb-1 small">
+              <span class="text-secondary">Sisa Piutang:</span>
+              <span class="text-danger fw-bold" id="repTotalPiutang">Rp 0</span>
+            </div>
+            <div class="d-flex justify-content-between small">
+              <span class="text-secondary">Total Struk:</span>
+              <span class="text-white fw-bold" id="repJumlahTrx">0</span>
+            </div>
+          </div>
+
+          <h6 class="fw-bold text-white mb-2 small">Rincian Pengeluaran Operasional</h6>
+          <div id="repListPengeluaran"></div>
+        </div>
+      </section>
     </main>
 
-    <!-- FLOATING CART -->
+    <!-- FLOATING CART (HANYA KASIR) -->
     <div id="floatingCartBar" class="floating-cart" onclick="navToTab('cart')">
       <div class="d-flex justify-content-between align-items-center">
         <div class="d-flex align-items-center gap-2">
           <div class="cart-bubble"><span id="floatingCartCount">0</span></div>
           <div>
             <div class="text-white fw-bold" id="floatingCartTotal">Rp 0</div>
-            <small class="text-secondary">Ketuk untuk checkout</small>
+            <small class="text-secondary">Ketuk untuk bayar</small>
           </div>
         </div>
         <i class="bi bi-chevron-right text-white"></i>
       </div>
     </div>
 
-    <!-- BOTTOM DOCK -->
+    <!-- BOTTOM DOCK NAVIGATION -->
     <nav class="bottom-dock d-flex justify-content-around align-items-center">
+      <!-- Tombol Khusus Owner -->
+      <button class="dock-btn d-none" id="dockDashboard" onclick="navToTab('dashboard')">
+        <i class="bi bi-speedometer2"></i>
+        <span>Monitor</span>
+      </button>
+
+      <!-- Tombol Khusus Kasir -->
       <button class="dock-btn active" id="dockMenu" onclick="navToTab('menu')">
         <i class="bi bi-grid-fill"></i>
         <span>Menu</span>
@@ -199,6 +366,8 @@
         <i class="bi bi-basket3-fill"></i>
         <span>Keranjang</span>
       </button>
+
+      <!-- Tombol Bersama -->
       <button class="dock-btn" id="dockHistory" onclick="navToTab('history')">
         <i class="bi bi-journal-text"></i>
         <span>Log Jual</span>
@@ -206,6 +375,12 @@
       <button class="dock-btn" id="dockKasbon" onclick="navToTab('kasbon')">
         <i class="bi bi-book-half"></i>
         <span>Kasbon</span>
+      </button>
+
+      <!-- Laporan Lengkap Khusus Owner -->
+      <button class="dock-btn d-none" id="dockReport" onclick="navToTab('report')">
+        <i class="bi bi-bar-chart-line-fill"></i>
+        <span>Laporan</span>
       </button>
     </nav>
   </div>
@@ -229,7 +404,7 @@
             <div class="fw-bold text-danger fs-5" id="modalKasbonSisa">Rp 0</div>
           </div>
           <div class="mb-2">
-            <label class="small text-secondary">Nominal Pembayaran (Rp)</label>
+            <label class="small text-secondary">Nominal Bayar (Rp)</label>
             <input type="number" id="modalKasbonPayAmount" class="form-control form-control-dark" placeholder="0">
           </div>
           <div class="mb-2">
@@ -248,6 +423,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="app.js?v=100"></script>
+  <!-- Anti-cache parameter v=102 -->
+  <script src="app.js?v=102"></script>
 </body>
 </html>
