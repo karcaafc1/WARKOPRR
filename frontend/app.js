@@ -37,6 +37,29 @@ async function handleAuthLogin(e) {
   try {
     const res = await fetch(GAS_API_URL, {
       method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'login', payload: payload })
+    });
+    const result = await res.json();
+
+    if (result.status === 'SUCCESS') {
+      currentUser = result.user;
+      localStorage.setItem('wrr_session', JSON.stringify(currentUser));
+      enterApplication();
+    } else {
+      alert(result.message);
+    }
+  } catch (err) {
+    alert('Koneksi backend gagal: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerText = 'Masuk ke Kasir';
+  }
+}
+
+  try {
+    const res = await fetch(GAS_API_URL, {
+      method: 'POST',
       body: JSON.stringify({ action: 'login', payload })
     });
     const result = await res.json();
