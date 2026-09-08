@@ -87,7 +87,7 @@
     <main class="app-content pb-5 mb-4">
 
       <!-- VIEW 0: MONITORING LIVE UTAMA OWNER -->
-      <section id="viewDashboard" class="tab-view">
+      <section id="viewDashboard" class="tab-view active">
         <div class="container-fluid px-3 pt-2">
           
           <div class="d-flex justify-content-between align-items-center mb-2">
@@ -237,7 +237,7 @@
       </section>
 
       <!-- VIEW 2: MENU POS (UTAMA UNTUK KASIR) -->
-      <section id="viewMenu" class="tab-view active">
+      <section id="viewMenu" class="tab-view">
         <div class="px-3 pt-2">
           <div class="search-input-wrap mb-2">
             <i class="bi bi-search"></i>
@@ -362,7 +362,7 @@
               </div>
               <div class="col-6">
                 <label class="small text-secondary mb-1">Tanggal</label>
-                <input type="date" id="reportFilterDate" class="form-control form-control-dark form-control-sm" onchange="loadOwnerReport()">
+                <input type="date" id="reportFilterDate" class="form-control form-control-dark form-select-sm" onchange="loadOwnerReport()">
               </div>
             </div>
           </div>
@@ -448,7 +448,7 @@
       </button>
 
       <!-- Tombol Khusus Kasir -->
-      <button class="dock-btn active" id="dockMenu" onclick="navToTab('menu')">
+      <button class="dock-btn" id="dockMenu" onclick="navToTab('menu')">
         <i class="bi bi-grid-fill"></i>
         <span>Menu</span>
       </button>
@@ -513,7 +513,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <!-- Anti-cache parameter v=105 untuk memotong cache lama -->
-  <script src="app.js?v=105"></script>
+  <!-- Anti-cache parameter v=106 -->
+  <script src="app.js?v=106"></script>
 </body>
 </html>
