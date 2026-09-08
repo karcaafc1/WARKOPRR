@@ -1,5 +1,5 @@
-// GANTI DENGAN URL WEB APP DARI GOOGLE APPS SCRIPT ANDA
-const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbxvKLMDVAJatI0y-03NJK50lJ6-WUs1II54pH5oitkeHs4bC5G82cpxWXFTyI5zOC3c/exec';
+// URL Web App dari Google Apps Script
+const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbyuw-W4MAjdVw05Heu1gwp3FPKk7fOOQ4QBmbHGpsFXFxfuqsz8NlthulaqPwAWZ7fWJw/exec';
 
 let menuList = [];
 let cart = [];
@@ -10,7 +10,8 @@ let savedOwnerPin = '';
 window.addEventListener('DOMContentLoaded', () => {
   loadMenu();
   loadHistory();
-  document.getElementById('reportDate').value = new Date().toISOString().split('T')[0];
+  const dateEl = document.getElementById('reportDate');
+  if (dateEl) dateEl.value = new Date().toISOString().split('T')[0];
 });
 
 function switchView(viewName) {
@@ -37,17 +38,18 @@ async function loadMenu() {
       container.innerHTML = `<div class="col-12 text-center text-danger py-4">${result.message}</div>`;
     }
   } catch (err) {
-    container.innerHTML = `<div class="col-12 text-center text-muted py-4">Gagal koneksi. Periksa URL API di app.js</div>`;
+    container.innerHTML = `<div class="col-12 text-center text-danger py-4">Gagal terhubung ke backend. Pastikan Web App Apps Script sudah diberi akses 'Anyone'.</div>`;
   }
 }
 
 function renderMenu() {
   const container = document.getElementById('menuContainer');
-  const term = document.getElementById('searchBox').value.toLowerCase();
+  const searchEl = document.getElementById('searchBox');
+  const term = searchEl ? searchEl.value.toLowerCase() : '';
 
   const filtered = menuList.filter(item => {
     const matchCat = (currentCategory === 'Semua') || (item.kategori === currentCategory);
-    const matchTerm = item.nama.toLowerCase().includes(term) || item.varian.toLowerCase().includes(term);
+    const matchTerm = item.nama.toLowerCase().includes(term) || (item.varian && item.varian.toLowerCase().includes(term));
     return matchCat && matchTerm;
   });
 
@@ -60,11 +62,11 @@ function renderMenu() {
     <div class="col-6 col-md-4 col-lg-3">
       <div class="card card-menu h-100 p-2 shadow-sm" onclick="addToCart('${item.id}')">
         <div class="d-flex justify-content-between align-items-center mb-1">
-          <span class="badge bg-secondary badge-varian">${item.varian}</span>
+          <span class="badge bg-secondary badge-varian">${item.varian || '-'}</span>
           <small class="text-muted">Stok: ${item.stok}</small>
         </div>
         <h6 class="fw-bold mb-1 text-truncate" style="font-size: 0.95rem;">${item.nama}</h6>
-        <div class="text-primary fw-bold small">Rp ${item.harga.toLocaleString('id-ID')}</div>
+        <div class="text-primary fw-bold small">Rp ${Number(item.harga).toLocaleString('id-ID')}</div>
       </div>
     </div>
   `).join('');
@@ -108,30 +110,32 @@ function updateCartUI() {
   const totalQty = cart.reduce((acc, c) => acc + c.qty, 0);
   const totalBayar = cart.reduce((acc, c) => acc + c.subtotal, 0);
 
-  badge.innerText = totalQty;
-  barQty.innerText = totalQty;
-  totalEl.innerText = 'Rp ' + totalBayar.toLocaleString('id-ID');
-  barTotal.innerText = 'Rp ' + totalBayar.toLocaleString('id-ID');
+  if (badge) badge.innerText = totalQty;
+  if (barQty) barQty.innerText = totalQty;
+  if (totalEl) totalEl.innerText = 'Rp ' + totalBayar.toLocaleString('id-ID');
+  if (barTotal) barTotal.innerText = 'Rp ' + totalBayar.toLocaleString('id-ID');
 
-  bar.style.display = totalQty > 0 ? 'block' : 'none';
+  if (bar) bar.style.display = totalQty > 0 ? 'block' : 'none';
 
   if (!cart.length) {
-    container.innerHTML = `<div class="text-center text-muted py-4 small">Keranjang masih kosong</div>`;
+    if (container) container.innerHTML = `<div class="text-center text-muted py-4 small">Keranjang masih kosong</div>`;
     return;
   }
 
-  container.innerHTML = cart.map((c, i) => `
-    <div class="d-flex justify-content-between align-items-center py-2 border-bottom small">
-      <div>
-        <div class="fw-bold">${c.nama} (${c.varian})</div>
-        <div class="text-muted">${c.qty}x @ Rp ${c.harga.toLocaleString('id-ID')}</div>
+  if (container) {
+    container.innerHTML = cart.map((c, i) => `
+      <div class="d-flex justify-content-between align-items-center py-2 border-bottom small">
+        <div>
+          <div class="fw-bold">${c.nama} (${c.varian || '-'})</div>
+          <div class="text-muted">${c.qty}x @ Rp ${Number(c.harga).toLocaleString('id-ID')}</div>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+          <span class="fw-semibold">Rp ${Number(c.subtotal).toLocaleString('id-ID')}</span>
+          <button class="btn btn-sm btn-outline-danger py-0 px-2" onclick="removeItem(${i})">&minus;</button>
+        </div>
       </div>
-      <div class="d-flex align-items-center gap-2">
-        <span class="fw-semibold">Rp ${c.subtotal.toLocaleString('id-ID')}</span>
-        <button class="btn btn-sm btn-outline-danger py-0 px-2" onclick="removeItem(${i})">&minus;</button>
-      </div>
-    </div>
-  `).join('');
+    `).join('');
+  }
 }
 
 function removeItem(idx) {
@@ -150,8 +154,9 @@ async function processCheckout() {
   btn.disabled = true;
   btn.innerText = 'Memproses...';
 
+  const shiftRadio = document.querySelector('input[name="shiftOpt"]:checked');
   const payload = {
-    shift: document.querySelector('input[name="shiftOpt"]:checked').value,
+    shift: shiftRadio ? shiftRadio.value : 'Pagi',
     isOvertime: document.getElementById('checkLembur').checked,
     customerName: document.getElementById('custName').value.trim() || 'Walk-in',
     tableNumber: document.getElementById('tableNo').value.trim() || '-',
@@ -188,6 +193,7 @@ async function processCheckout() {
 
 async function loadHistory() {
   const container = document.getElementById('historyList');
+  if (!container) return;
   try {
     const res = await fetch(`${GAS_API_URL}?action=getHistory&limit=25`);
     const result = await res.json();
@@ -203,7 +209,7 @@ async function loadHistory() {
             <div class="text-muted">Meja: ${o.meja} | ${o.pelanggan} (${o.shift}${o.lembur ? ' + Lembur' : ''})</div>
           </div>
           <div class="text-end">
-            <div class="fw-bold text-success">Rp ${o.total.toLocaleString('id-ID')}</div>
+            <div class="fw-bold text-success">Rp ${Number(o.total).toLocaleString('id-ID')}</div>
             <span class="badge bg-secondary">${o.metode}</span>
           </div>
         </div>
@@ -262,15 +268,15 @@ async function loadReport() {
     const data = await res.json();
     if (data.status === 'SUCCESS') {
       const r = data.ringkasan;
-      document.getElementById('valOmset').innerText = 'Rp ' + r.omset.toLocaleString('id-ID');
-      document.getElementById('valHpp').innerText = 'Rp ' + r.hpp.toLocaleString('id-ID');
-      document.getElementById('valOps').innerText = 'Rp ' + r.pengeluaran.toLocaleString('id-ID');
-      document.getElementById('valNet').innerText = 'Rp ' + r.labaBersih.toLocaleString('id-ID');
-      document.getElementById('shiftOmsetPagi').innerText = 'Rp ' + (data.shiftOmset.Pagi || 0).toLocaleString('id-ID');
-      document.getElementById('shiftOmsetMalam').innerText = 'Rp ' + (data.shiftOmset.Malam || 0).toLocaleString('id-ID');
+      document.getElementById('valOmset').innerText = 'Rp ' + Number(r.omset).toLocaleString('id-ID');
+      document.getElementById('valHpp').innerText = 'Rp ' + Number(r.hpp).toLocaleString('id-ID');
+      document.getElementById('valOps').innerText = 'Rp ' + Number(r.pengeluaran).toLocaleString('id-ID');
+      document.getElementById('valNet').innerText = 'Rp ' + Number(r.labaBersih).toLocaleString('id-ID');
+      document.getElementById('shiftOmsetPagi').innerText = 'Rp ' + Number(data.shiftOmset.Pagi || 0).toLocaleString('id-ID');
+      document.getElementById('shiftOmsetMalam').innerText = 'Rp ' + Number(data.shiftOmset.Malam || 0).toLocaleString('id-ID');
     }
   } catch (e) {
-    alert('Gagal mengambil laporan');
+    alert('Gagal mengambil laporan finansial');
   }
 }
 
@@ -303,4 +309,8 @@ async function submitExpense(e) {
   } finally {
     btn.disabled = false;
   }
+}
+
+function updateShiftUI() {
+  // Hook untuk penyesuaian event shift jika diperlukan
 }
