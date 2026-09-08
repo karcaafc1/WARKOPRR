@@ -1,4 +1,4 @@
-const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbzzdd1RzVj3a_oenJrsIDPWR7NT5FP2WqUzXH__K_mss3_XeokPV1HvZlYkmxCr1EDH/exec';
+const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbzQ3G0VdXVfCgd0RczLTGOaZNErFIR0Lq1vt0ISAmTEcjc8pC7REgg5cBzH5DPffTvdGA/exec';
 
 let currentUser = null;
 let menuCatalog = [];
