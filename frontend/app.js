@@ -1,4 +1,4 @@
-// Endpoint URL Baru Google Apps Script (Tanpa Spasi)
+// URL Baru Deployment Google Apps Script
 const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbzQ3G0VdXVfCgd0RczLTGOaZNErFIR0Lq1vt0ISAmTEcjc8pC7REgg5cBzH5DPffTvdGA/exec';
 
 let currentUser = null;
@@ -7,7 +7,7 @@ let cart = [];
 let currentCategory = 'Semua';
 let liveMonitorInterval = null;
 
-// Registrasi Service Worker PWA
+// PWA Service Worker
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js').catch(err => console.log('SW Info:', err));
@@ -17,7 +17,16 @@ if ('serviceWorker' in navigator) {
 window.addEventListener('online', () => syncOfflineOrders());
 window.addEventListener('DOMContentLoaded', () => restoreSession());
 
-// Universal Helper POST anti-CORS via URLSearchParams
+// Helper Tanggal Default (Format YYYY-MM-DD)
+function getTodayIsoString() {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+// Helper POST Universal anti-CORS via URLSearchParams
 async function postToGAS(action, payload = {}, extraParams = {}) {
   const bodyData = new URLSearchParams();
   bodyData.append('action', action);
@@ -96,7 +105,7 @@ function enterApplication() {
   const floatBar = document.getElementById('floatingCartBar');
 
   if (currentUser.role === 'Owner') {
-    // Mode Khusus Owner: Tampilkan Monitoring, Analisa & Audit
+    // Mode Khusus Owner
     if (dockDashboard) dockDashboard.classList.remove('d-none');
     if (dockAnalytics) dockAnalytics.classList.remove('d-none');
     if (dockReport) dockReport.classList.remove('d-none');
@@ -105,7 +114,13 @@ function enterApplication() {
     if (wrapLembur) wrapLembur.classList.add('d-none');
     if (floatBar) floatBar.style.display = 'none';
 
-    // Langsung buka Dashboard Monitoring Live
+    // Inisialisasi default tanggal laporan audit
+    const dateInput = document.getElementById('reportFilterDate');
+    if (dateInput && !dateInput.value) {
+      dateInput.value = getTodayIsoString();
+    }
+
+    // Default ke Live Monitor
     navToTab('dashboard');
 
     if (liveMonitorInterval) clearInterval(liveMonitorInterval);
@@ -114,7 +129,7 @@ function enterApplication() {
     }, 30000);
 
   } else {
-    // Mode Khusus Kasir: Tampilkan Menu & Kasir
+    // Mode Khusus Kasir
     if (dockDashboard) dockDashboard.classList.add('d-none');
     if (dockAnalytics) dockAnalytics.classList.add('d-none');
     if (dockReport) dockReport.classList.add('d-none');
@@ -151,7 +166,7 @@ function navToTab(tabName) {
   if (tabName === 'report') loadOwnerReport();
 }
 
-// 1. MONITORING LIVE OWNER
+// 1. MONITORING LIVE TRANSAKSI
 async function loadLiveMonitorData(isManual) {
   if (!currentUser || currentUser.role !== 'Owner') return;
 
@@ -159,32 +174,33 @@ async function loadLiveMonitorData(isManual) {
   if (timerEl) timerEl.innerText = 'Menyinkronkan...';
 
   try {
-    const today = new Date().toISOString().split('T')[0];
-    const res = await fetch(`${GAS_API_URL}?action=getReport&token=${currentUser.token}&username=${currentUser.username}&date=${today}&cabang=Semua`);
+    const today = getTodayIsoString();
+    const res = await fetch(`${GAS_API_URL}?action=getReport&token=${encodeURIComponent(currentUser.token)}&username=${encodeURIComponent(currentUser.username)}&date=${today}&cabang=Semua`);
     const result = await res.json();
 
-    const resHist = await fetch(`${GAS_API_URL}?action=getHistory&token=${currentUser.token}&username=${currentUser.username}`);
+    const resHist = await fetch(`${GAS_API_URL}?action=getHistory&token=${encodeURIComponent(currentUser.token)}&username=${encodeURIComponent(currentUser.username)}`);
     const resultHist = await resHist.json();
 
     if (result.status === 'SUCCESS') {
       const ringkas = result.data.ringkasan;
-      document.getElementById('monTotalOmset').innerText = 'Rp ' + Number(ringkas.totalOmsetKotor).toLocaleString('id-ID');
-      document.getElementById('monNetCash').innerText = 'Kas Bersih: Rp ' + Number(ringkas.labaBersihKas).toLocaleString('id-ID');
-      document.getElementById('monTotalTrx').innerText = ringkas.jumlahTransaksi + ' Struk';
-      document.getElementById('monTotalPiutang').innerText = 'Piutang: Rp ' + Number(ringkas.totalPiutangBelumLunas).toLocaleString('id-ID');
+      document.getElementById('monTotalOmset').innerText = 'Rp ' + Number(ringkas.totalOmsetKotor || 0).toLocaleString('id-ID');
+      document.getElementById('monNetCash').innerText = 'Kas Bersih: Rp ' + Number(ringkas.labaBersihKas || 0).toLocaleString('id-ID');
+      document.getElementById('monTotalTrx').innerText = (ringkas.jumlahTransaksi || 0) + ' Struk';
+      document.getElementById('monTotalPiutang').innerText = 'Piutang: Rp ' + Number(ringkas.totalPiutangBelumLunas || 0).toLocaleString('id-ID');
 
       if (resultHist.status === 'SUCCESS') {
-        const orders = resultHist.data;
+        const orders = resultHist.data || [];
         let cenOmset = 0, cenCount = 0;
         let mapOmset = 0, mapCount = 0;
 
         orders.forEach(o => {
           if (o.status !== 'Void') {
-            if (o.cabang.includes('Cenderawasih')) {
-              cenOmset += o.total;
+            const cb = String(o.cabang || '');
+            if (cb.includes('Cenderawasih')) {
+              cenOmset += Number(o.total || 0);
               cenCount++;
-            } else if (o.cabang.includes('Mappaoddang')) {
-              mapOmset += o.total;
+            } else if (cb.includes('Mappaoddang')) {
+              mapOmset += Number(o.total || 0);
               mapCount++;
             }
           }
@@ -218,7 +234,7 @@ function renderLiveMonitorFeed(orders) {
   }
 
   container.innerHTML = orders.map(o => {
-    const isCenderawasih = o.cabang.includes('Cenderawasih');
+    const isCenderawasih = String(o.cabang || '').includes('Cenderawasih');
     const badgeCabang = isCenderawasih
       ? `<span class="badge badge-cenderawasih">Cenderawasih</span>`
       : `<span class="badge badge-mappaoddang">Mappaoddang</span>`;
@@ -242,7 +258,7 @@ function renderLiveMonitorFeed(orders) {
             <span class="text-secondary"> &bull; Meja ${o.meja} (${o.kasir})</span>
           </div>
           <div class="text-end">
-            <div class="fw-bold text-accent">Rp ${Number(o.total).toLocaleString('id-ID')}</div>
+            <div class="fw-bold text-accent">Rp ${Number(o.total || 0).toLocaleString('id-ID')}</div>
             <div class="d-flex align-items-center justify-content-end gap-1">
               <small class="text-info">${o.metode}</small>
               ${badgeStatus}
@@ -265,27 +281,27 @@ async function loadSalesAnalytics() {
   rangeLabel.innerText = 'Menghitung analisa performa...';
 
   try {
-    const res = await fetch(`${GAS_API_URL}?action=getSalesAnalytics&token=${currentUser.token}&username=${currentUser.username}&periode=${periode}&cabang=${cabang}`);
+    const res = await fetch(`${GAS_API_URL}?action=getSalesAnalytics&token=${encodeURIComponent(currentUser.token)}&username=${encodeURIComponent(currentUser.username)}&periode=${encodeURIComponent(periode)}&cabang=${encodeURIComponent(cabang)}`);
     const result = await res.json();
 
     if (result.status === 'SUCCESS') {
       const d = result.data;
       rangeLabel.innerText = `Rentang: ${d.startDate} - ${d.endDate}`;
 
-      document.getElementById('anaTotalOmset').innerText = 'Rp ' + Number(d.ringkasan.omset).toLocaleString('id-ID');
-      document.getElementById('anaLabaKas').innerText = 'Laba Kas: Rp ' + Number(d.ringkasan.labaKas).toLocaleString('id-ID');
-      document.getElementById('anaAvgBasket').innerText = 'Rp ' + Number(d.ringkasan.avgBasket).toLocaleString('id-ID');
-      document.getElementById('anaTotalTrx').innerText = d.ringkasan.transaksi + ' Transaksi';
+      document.getElementById('anaTotalOmset').innerText = 'Rp ' + Number(d.ringkasan.omset || 0).toLocaleString('id-ID');
+      document.getElementById('anaLabaKas').innerText = 'Laba Kas: Rp ' + Number(d.ringkasan.labaKas || 0).toLocaleString('id-ID');
+      document.getElementById('anaAvgBasket').innerText = 'Rp ' + Number(d.ringkasan.avgBasket || 0).toLocaleString('id-ID');
+      document.getElementById('anaTotalTrx').innerText = (d.ringkasan.transaksi || 0) + ' Transaksi';
 
-      document.getElementById('anaTunai').innerText = 'Rp ' + Number(d.ringkasan.tunai).toLocaleString('id-ID');
-      document.getElementById('anaQris').innerText = 'Rp ' + Number(d.ringkasan.qris).toLocaleString('id-ID');
-      document.getElementById('anaKasbon').innerText = 'Rp ' + Number(d.ringkasan.kasbon).toLocaleString('id-ID');
-      document.getElementById('anaBeban').innerText = 'Rp ' + Number(d.ringkasan.beban).toLocaleString('id-ID');
+      document.getElementById('anaTunai').innerText = 'Rp ' + Number(d.ringkasan.tunai || 0).toLocaleString('id-ID');
+      document.getElementById('anaQris').innerText = 'Rp ' + Number(d.ringkasan.qris || 0).toLocaleString('id-ID');
+      document.getElementById('anaKasbon').innerText = 'Rp ' + Number(d.ringkasan.kasbon || 0).toLocaleString('id-ID');
+      document.getElementById('anaBeban').innerText = 'Rp ' + Number(d.ringkasan.beban || 0).toLocaleString('id-ID');
 
-      // Top 5 Best Seller Items
+      // 5 Menu Terlaris
       const topContainer = document.getElementById('anaTopItemsList');
-      if (!d.topItems.length) {
-        topContainer.innerHTML = `<div class="text-center text-secondary py-2 small">Belum ada menu terjual</div>`;
+      if (!d.topItems || !d.topItems.length) {
+        topContainer.innerHTML = `<div class="text-center text-secondary py-2 small">Belum ada menu terjual di periode ini</div>`;
       } else {
         topContainer.innerHTML = d.topItems.map((item, idx) => `
           <div class="d-flex justify-content-between align-items-center py-2 border-bottom border-dark small">
@@ -295,15 +311,15 @@ async function loadSalesAnalytics() {
             </div>
             <div class="text-end">
               <span class="fw-bold text-accent">${item.qty} porsi</span>
-              <small class="text-secondary d-block">Rp ${Number(item.omset).toLocaleString('id-ID')}</small>
+              <small class="text-secondary d-block">Rp ${Number(item.omset || 0).toLocaleString('id-ID')}</small>
             </div>
           </div>
         `).join('');
       }
 
-      // Visual Bar Tren
+      // Visual Tren Bar
       const trendContainer = document.getElementById('anaTrendBars');
-      const trendKeys = Object.keys(d.trend);
+      const trendKeys = Object.keys(d.trend || {});
       document.getElementById('anaTrendTitle').innerText = periode === 'harian' ? 'Jam Paling Ramai (Peak Hours)' : 'Tren Penjualan Harian';
 
       if (!trendKeys.length) {
@@ -311,13 +327,13 @@ async function loadSalesAnalytics() {
       } else {
         const maxVal = Math.max(...Object.values(d.trend), 1);
         trendContainer.innerHTML = trendKeys.map(key => {
-          const val = d.trend[key];
+          const val = Number(d.trend[key] || 0);
           const percent = Math.round((val / maxVal) * 100);
           return `
             <div class="mb-2">
               <div class="d-flex justify-content-between small mb-1">
                 <span class="text-secondary">${key}</span>
-                <span class="text-white fw-bold">Rp ${Number(val).toLocaleString('id-ID')}</span>
+                <span class="text-white fw-bold">Rp ${val.toLocaleString('id-ID')}</span>
               </div>
               <div class="progress" style="height: 6px; background-color: #1F2937;">
                 <div class="progress-bar bg-warning" style="width: ${percent}%"></div>
@@ -327,14 +343,63 @@ async function loadSalesAnalytics() {
         }).join('');
       }
     } else {
-      alert('Gagal mengambil analisis: ' + result.message);
+      alert('Gagal mengambil analisis: ' + (result.message || 'Error'));
     }
   } catch (err) {
     rangeLabel.innerText = 'Koneksi backend gagal';
   }
 }
 
-// 3. LOGIKA POS KASIR
+// 3. LAPORAN KEUANGAN AUDIT OWNER
+async function loadOwnerReport() {
+  if (!currentUser || currentUser.role !== 'Owner') return;
+
+  const filterCabang = document.getElementById('reportFilterCabang').value;
+  const dateInput = document.getElementById('reportFilterDate');
+  
+  if (!dateInput.value) {
+    dateInput.value = getTodayIsoString();
+  }
+  const filterDate = dateInput.value;
+
+  try {
+    const res = await fetch(`${GAS_API_URL}?action=getReport&token=${encodeURIComponent(currentUser.token)}&username=${encodeURIComponent(currentUser.username)}&date=${encodeURIComponent(filterDate)}&cabang=${encodeURIComponent(filterCabang)}`);
+    const result = await res.json();
+
+    if (result.status === 'SUCCESS') {
+      const d = result.data.ringkasan;
+      document.getElementById('repOmsetKotor').innerText = 'Rp ' + Number(d.totalOmsetKotor || 0).toLocaleString('id-ID');
+      document.getElementById('repLabaBersih').innerText = 'Rp ' + Number(d.labaBersihKas || 0).toLocaleString('id-ID');
+      document.getElementById('repTunai').innerText = 'Rp ' + Number(d.totalTunai || 0).toLocaleString('id-ID');
+      document.getElementById('repQris').innerText = 'Rp ' + Number(d.totalQris || 0).toLocaleString('id-ID');
+      document.getElementById('repPengeluaran').innerText = 'Rp ' + Number(d.totalPengeluaran || 0).toLocaleString('id-ID');
+      document.getElementById('repKasbonHariIni').innerText = 'Rp ' + Number(d.totalKasbonBaru || 0).toLocaleString('id-ID');
+      document.getElementById('repTotalPiutang').innerText = 'Rp ' + Number(d.totalPiutangBelumLunas || 0).toLocaleString('id-ID');
+      document.getElementById('repJumlahTrx').innerText = (d.jumlahTransaksi || 0) + ' Struk';
+
+      const expContainer = document.getElementById('repListPengeluaran');
+      if (!result.data.pengeluaran || !result.data.pengeluaran.length) {
+        expContainer.innerHTML = `<div class="text-center text-secondary py-3 small">Tidak ada pengeluaran</div>`;
+      } else {
+        expContainer.innerHTML = result.data.pengeluaran.map(e => `
+          <div class="card bg-dark-card border-0 p-2 mb-1 small d-flex justify-content-between flex-row">
+            <div>
+              <span class="text-white fw-bold">[${e.cabang}] ${e.kategori}</span>
+              <div class="text-secondary" style="font-size:0.75rem;">${e.deskripsi} (${e.pic})</div>
+            </div>
+            <span class="text-danger fw-bold">Rp ${Number(e.nominal || 0).toLocaleString('id-ID')}</span>
+          </div>
+        `).join('');
+      }
+    } else {
+      alert('Gagal memuat laporan: ' + (result.message || ''));
+    }
+  } catch (err) {
+    alert('Koneksi backend laporan gagal: ' + err.message);
+  }
+}
+
+// 4. KATALOG & TRANSAKSI KASIR
 async function loadCatalog() {
   const container = document.getElementById('catalogGrid');
   try {
@@ -602,7 +667,7 @@ async function loadShiftHistory() {
   if (!container || !currentUser) return;
 
   try {
-    const res = await fetch(`${GAS_API_URL}?action=getHistory&token=${currentUser.token}&username=${currentUser.username}`);
+    const res = await fetch(`${GAS_API_URL}?action=getHistory&token=${encodeURIComponent(currentUser.token)}&username=${encodeURIComponent(currentUser.username)}`);
     const result = await res.json();
 
     if (result.status === 'SUCCESS') {
@@ -619,7 +684,7 @@ async function loadShiftHistory() {
           </div>
           <div class="d-flex justify-content-between align-items-center text-secondary small">
             <span>${o.pelanggan} | Meja ${o.meja} (${o.metode})</span>
-            <span class="fw-bold text-accent">Rp ${Number(o.total).toLocaleString('id-ID')}</span>
+            <span class="fw-bold text-accent">Rp ${Number(o.total || 0).toLocaleString('id-ID')}</span>
           </div>
         </div>
       `).join('');
@@ -632,7 +697,7 @@ async function loadShiftHistory() {
 async function loadKasbonData() {
   const container = document.getElementById('kasbonListContainer');
   try {
-    const res = await fetch(`${GAS_API_URL}?action=getKasbon&token=${currentUser.token}&username=${currentUser.username}&status=Belum Lunas`);
+    const res = await fetch(`${GAS_API_URL}?action=getKasbon&token=${encodeURIComponent(currentUser.token)}&username=${encodeURIComponent(currentUser.username)}&status=Belum Lunas`);
     const result = await res.json();
 
     if (result.status === 'SUCCESS') {
@@ -649,7 +714,7 @@ async function loadKasbonData() {
           </div>
           <div class="d-flex justify-content-between align-items-center small mb-2">
             <span class="text-secondary">${k.tanggal}</span>
-            <span class="fw-bold text-danger">Sisa: Rp ${Number(k.sisa).toLocaleString('id-ID')}</span>
+            <span class="fw-bold text-danger">Sisa: Rp ${Number(k.sisa || 0).toLocaleString('id-ID')}</span>
           </div>
           <button class="btn btn-sm btn-outline-custom w-100" onclick="openPayKasbonModal('${k.id}', '${k.pelanggan}', ${k.sisa})">Bayar Kasbon</button>
         </div>
@@ -694,48 +759,5 @@ async function submitPayKasbon() {
     }
   } catch (e) {
     alert('Koneksi gagal saat melunasi kasbon');
-  }
-}
-
-async function loadOwnerReport() {
-  if (!currentUser || currentUser.role !== 'Owner') return;
-
-  const filterCabang = document.getElementById('reportFilterCabang').value;
-  const filterDate = document.getElementById('reportFilterDate').value;
-
-  try {
-    const res = await fetch(`${GAS_API_URL}?action=getReport&token=${currentUser.token}&username=${currentUser.username}&date=${filterDate}&cabang=${filterCabang}`);
-    const result = await res.json();
-
-    if (result.status === 'SUCCESS') {
-      const d = result.data.ringkasan;
-      document.getElementById('repOmsetKotor').innerText = 'Rp ' + Number(d.totalOmsetKotor).toLocaleString('id-ID');
-      document.getElementById('repLabaBersih').innerText = 'Rp ' + Number(d.labaBersihKas).toLocaleString('id-ID');
-      document.getElementById('repTunai').innerText = 'Rp ' + Number(d.totalTunai).toLocaleString('id-ID');
-      document.getElementById('repQris').innerText = 'Rp ' + Number(d.totalQris).toLocaleString('id-ID');
-      document.getElementById('repPengeluaran').innerText = 'Rp ' + Number(d.totalPengeluaran).toLocaleString('id-ID');
-      document.getElementById('repKasbonHariIni').innerText = 'Rp ' + Number(d.totalKasbonBaru).toLocaleString('id-ID');
-      document.getElementById('repTotalPiutang').innerText = 'Rp ' + Number(d.totalPiutangBelumLunas).toLocaleString('id-ID');
-      document.getElementById('repJumlahTrx').innerText = d.jumlahTransaksi + ' Struk';
-
-      const expContainer = document.getElementById('repListPengeluaran');
-      if (!result.data.pengeluaran.length) {
-        expContainer.innerHTML = `<div class="text-center text-secondary py-3 small">Tidak ada pengeluaran</div>`;
-      } else {
-        expContainer.innerHTML = result.data.pengeluaran.map(e => `
-          <div class="card bg-dark-card border-0 p-2 mb-1 small d-flex justify-content-between flex-row">
-            <div>
-              <span class="text-white fw-bold">[${e.cabang}] ${e.kategori}</span>
-              <div class="text-secondary" style="font-size:0.75rem;">${e.deskripsi} (${e.pic})</div>
-            </div>
-            <span class="text-danger fw-bold">Rp ${Number(e.nominal).toLocaleString('id-ID')}</span>
-          </div>
-        `).join('');
-      }
-    } else {
-      alert('Gagal memuat laporan: ' + result.message);
-    }
-  } catch (err) {
-    alert('Koneksi backend laporan gagal');
   }
 }
