@@ -4,28 +4,9 @@ let currentUser = null;
 let menuCatalog = [];
 let cart = [];
 let currentCategory = 'Semua';
-let activePendingItem = null;
-
-// Registrasi Service Worker untuk kapabilitas PWA & Offline
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch(err => {
-      console.log('SW registration failed:', err);
-    });
-  });
-}
-
-// Otomatis sinkronisasi antrean offline ketika internet kembali online
-window.addEventListener('online', () => {
-  syncOfflineOrders();
-});
 
 window.addEventListener('DOMContentLoaded', () => {
   restoreSession();
-  const dateEl = document.getElementById('reportDatePicker');
-  if (dateEl) {
-    dateEl.value = new Date().toISOString().split('T')[0];
-  }
 });
 
 function restoreSession() {
@@ -54,7 +35,7 @@ async function handleAuthLogin(e) {
     const res = await fetch(GAS_API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action: 'login', payload: payload })
+      body: JSON.stringify({ action: 'login', payload })
     });
     const result = await res.json();
 
@@ -66,48 +47,30 @@ async function handleAuthLogin(e) {
       alert(result.message);
     }
   } catch (err) {
-    alert('Koneksi backend gagal: ' + err.message);
+    alert('Gagal login: ' + err.message);
   } finally {
     btn.disabled = false;
     btn.innerText = 'Masuk ke Kasir';
   }
 }
 
-async function handleAuthLogout() {
-  if (!confirm('Apakah Anda yakin ingin mengakhiri shift & keluar?')) return;
-  try {
-    await fetch(GAS_API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({
-        action: 'logout',
-        payload: { username: currentUser.username }
-      })
-    });
-  } catch (e) {}
-
+function handleAuthLogout() {
+  if (!confirm('Akhiri shift dan keluar?')) return;
+  fetch(GAS_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ action: 'logout', payload: { username: currentUser.username } })
+  });
   localStorage.removeItem('wrr_session');
-  currentUser = null;
-  cart = [];
   location.reload();
 }
 
 function enterApplication() {
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('mainApp').style.display = 'block';
-
-  document.getElementById('headerUserLabel').innerText = 
-    `${currentUser.nama} (${currentUser.role} - ${currentUser.shift})`;
-
-  if (currentUser.role === 'Owner') {
-    document.getElementById('dockOwner').style.display = 'flex';
-  } else {
-    document.getElementById('dockOwner').style.display = 'none';
-  }
-
+  document.getElementById('headerUserLabel').innerText = `${currentUser.cabang} | ${currentUser.nama} (${currentUser.shift})`;
   loadCatalog();
   loadShiftHistory();
-  syncOfflineOrders();
 }
 
 function showLoginScreen() {
@@ -126,7 +89,7 @@ function navToTab(tabName) {
   if (dock) dock.classList.add('active');
 
   if (tabName === 'history') loadShiftHistory();
-  if (tabName === 'owner') fetchOwnerReport();
+  if (tabName === 'kasbon') loadKasbonData();
 }
 
 async function loadCatalog() {
@@ -136,23 +99,10 @@ async function loadCatalog() {
     const result = await res.json();
     if (result.status === 'SUCCESS') {
       menuCatalog = result.data;
-      localStorage.setItem('wrr_cached_menu', JSON.stringify(menuCatalog));
       renderCatalog();
-    } else {
-      loadFallbackCachedMenu(container, result.message);
     }
   } catch (e) {
-    loadFallbackCachedMenu(container);
-  }
-}
-
-function loadFallbackCachedMenu(container, errorMsg) {
-  const cached = localStorage.getItem('wrr_cached_menu');
-  if (cached) {
-    menuCatalog = JSON.parse(cached);
-    renderCatalog();
-  } else {
-    container.innerHTML = `<div class="text-center text-warning py-5">${errorMsg || 'Mode Offline: Menu lokal belum tersedia'}</div>`;
+    container.innerHTML = `<div class="text-center text-danger py-5">Gagal sinkron menu</div>`;
   }
 }
 
@@ -162,7 +112,7 @@ function renderCatalog() {
 
   const filtered = menuCatalog.filter(item => {
     const matchCat = (currentCategory === 'Semua') || (item.kategori === currentCategory);
-    const matchTerm = item.nama.toLowerCase().includes(term) || (item.varian && item.varian.toLowerCase().includes(term));
+    const matchTerm = item.nama.toLowerCase().includes(term);
     return matchCat && matchTerm;
   });
 
@@ -173,12 +123,12 @@ function renderCatalog() {
 
   container.innerHTML = filtered.map(m => `
     <div class="col-6 col-md-4 col-lg-3">
-      <div class="menu-card h-100" onclick="openItemCustomModal('${m.id}')">
+      <div class="menu-card h-100" onclick="addToCart('${m.id}')">
         <div class="d-flex justify-content-between align-items-center mb-1">
           <span class="menu-badge">${m.varian}</span>
           <small class="text-secondary" style="font-size:0.7rem;">Stok: ${m.stok}</small>
         </div>
-        <h6 class="fw-bold text-white mb-1 text-truncate" style="font-size: 0.95rem;">${m.nama}</h6>
+        <h6 class="fw-bold text-white mb-1 text-truncate">${m.nama}</h6>
         <div class="text-accent fw-bold small">Rp ${Number(m.harga).toLocaleString('id-ID')}</div>
       </div>
     </div>
@@ -192,42 +142,17 @@ function setCategory(cat, btn) {
   renderCatalog();
 }
 
-function openItemCustomModal(id) {
+function addToCart(id) {
   const item = menuCatalog.find(m => m.id === id);
   if (!item) return;
-  activePendingItem = item;
 
-  document.getElementById('customItemId').value = item.id;
-  document.getElementById('customItemTitle').innerText = `${item.nama} (${item.varian})`;
-  document.getElementById('customItemNote').value = '';
-
-  const modal = new bootstrap.Modal(document.getElementById('itemCustomModal'));
-  modal.show();
-}
-
-function appendNote(txt) {
-  const noteEl = document.getElementById('customItemNote');
-  noteEl.value = noteEl.value ? `${noteEl.value}, ${txt}` : txt;
-}
-
-function confirmAddToCartWithNote() {
-  if (!activePendingItem) return;
-  const note = document.getElementById('customItemNote').value.trim();
-
-  const existing = cart.find(c => c.id === activePendingItem.id && c.catatan === note);
+  const existing = cart.find(c => c.id === id);
   if (existing) {
     existing.qty++;
     existing.subtotal = existing.qty * existing.harga;
   } else {
-    cart.push({
-      ...activePendingItem,
-      qty: 1,
-      subtotal: activePendingItem.harga,
-      catatan: note
-    });
+    cart.push({ ...item, qty: 1, subtotal: item.harga, catatan: '' });
   }
-
-  bootstrap.Modal.getInstance(document.getElementById('itemCustomModal')).hide();
   updateCartUI();
 }
 
@@ -244,11 +169,10 @@ function updateCartUI() {
   grandTotalEl.innerText = 'Rp ' + totalAmount.toLocaleString('id-ID');
   floatCount.innerText = totalQty;
   floatTotal.innerText = 'Rp ' + totalAmount.toLocaleString('id-ID');
-
   floatBar.style.display = totalQty > 0 ? 'block' : 'none';
 
   if (!cart.length) {
-    list.innerHTML = `<div class="text-center text-secondary py-4 small">Belum ada menu dipilih</div>`;
+    list.innerHTML = `<div class="text-center text-secondary py-4 small">Belum ada pesanan</div>`;
     calcChange();
     return;
   }
@@ -258,7 +182,6 @@ function updateCartUI() {
       <div>
         <div class="fw-bold text-white">${c.nama} (${c.varian})</div>
         <div class="text-secondary">${c.qty}x @ Rp ${Number(c.harga).toLocaleString('id-ID')}</div>
-        ${c.catatan ? `<span class="badge bg-dark border border-secondary text-warning" style="font-size:0.65rem;">${c.catatan}</span>` : ''}
       </div>
       <div class="d-flex align-items-center gap-2">
         <span class="fw-bold text-accent">Rp ${Number(c.subtotal).toLocaleString('id-ID')}</span>
@@ -267,22 +190,18 @@ function updateCartUI() {
       </div>
     </div>
   `).join('');
-
   calcChange();
 }
 
 function modifyCartQty(index, delta) {
   cart[index].qty += delta;
-  if (cart[index].qty <= 0) {
-    cart.splice(index, 1);
-  } else {
-    cart[index].subtotal = cart[index].qty * cart[index].harga;
-  }
+  if (cart[index].qty <= 0) cart.splice(index, 1);
+  else cart[index].subtotal = cart[index].qty * cart[index].harga;
   updateCartUI();
 }
 
 function clearCart() {
-  if (confirm('Kosongkan semua pesanan di keranjang?')) {
+  if (confirm('Kosongkan keranjang?')) {
     cart = [];
     updateCartUI();
   }
@@ -297,11 +216,7 @@ function togglePayMethod() {
 function setQuickCash(val) {
   const totalAmount = cart.reduce((acc, c) => acc + c.subtotal, 0);
   const input = document.getElementById('inputCashPaid');
-  if (val === 'exact') {
-    input.value = totalAmount;
-  } else {
-    input.value = val;
-  }
+  input.value = val === 'exact' ? totalAmount : val;
   calcChange();
 }
 
@@ -316,122 +231,58 @@ async function processOrderCheckout() {
   if (!cart.length) return alert('Pilih menu terlebih dahulu!');
   const totalAmount = cart.reduce((acc, c) => acc + c.subtotal, 0);
   const payMethod = document.querySelector('input[name="payType"]:checked').value;
-  const cashPaid = Number(document.getElementById('inputCashPaid').value) || totalAmount;
+  const customerName = document.getElementById('orderCust').value.trim();
 
+  if (payMethod === 'Kasbon' && !customerName) {
+    return alert('Untuk transaksi KASBON, nama pelanggan WAJIB diisi!');
+  }
+
+  const cashPaid = Number(document.getElementById('inputCashPaid').value) || totalAmount;
   if (payMethod === 'Tunai' && cashPaid < totalAmount) {
-    return alert('Uang diterima kurang dari total transaksi!');
+    return alert('Uang yang diterima kurang!');
   }
 
   const btn = document.getElementById('btnSubmitOrder');
   btn.disabled = true;
-  btn.innerText = 'Memproses Transaksi...';
+  btn.innerText = 'Menyimpan...';
 
   const payload = {
     shift: currentUser.shift,
     isLembur: document.getElementById('checkLembur').checked,
-    customerName: document.getElementById('orderCust').value.trim() || 'Walk-in',
+    customerName: customerName || 'Walk-in',
     tableNumber: document.getElementById('orderTable').value.trim() || '-',
     totalAmount: totalAmount,
-    nominalDiterima: cashPaid,
-    kembalian: Math.max(0, cashPaid - totalAmount),
+    nominalDiterima: payMethod === 'Kasbon' ? 0 : cashPaid,
+    kembalian: payMethod === 'Tunai' ? Math.max(0, cashPaid - totalAmount) : 0,
     paymentMethod: payMethod,
     items: [...cart]
   };
-
-  // Mekanisme simpan offline jika perangkat tidak memiliki koneksi
-  if (!navigator.onLine) {
-    saveOrderOffline(payload);
-    finalizeOrderSuccess(cashPaid - totalAmount, true);
-    btn.disabled = false;
-    btn.innerText = 'SELESAIKAN TRANSAKSI';
-    return;
-  }
 
   try {
     const res = await fetch(GAS_API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({
-        action: 'submitOrder',
-        token: currentUser.token,
-        username: currentUser.username,
-        payload: payload
-      })
+      body: JSON.stringify({ action: 'submitOrder', token: currentUser.token, username: currentUser.username, payload })
     });
     const result = await res.json();
 
     if (result.status === 'SUCCESS') {
-      finalizeOrderSuccess(cashPaid - totalAmount, false, result.orderId);
+      alert(`Transaksi Berhasil! (${payMethod})\nID: ${result.orderId}`);
+      cart = [];
+      document.getElementById('orderCust').value = '';
+      document.getElementById('orderTable').value = '';
+      document.getElementById('inputCashPaid').value = '';
+      updateCartUI();
+      navToTab('menu');
       loadCatalog();
     } else {
       alert('Gagal: ' + result.message);
     }
   } catch (e) {
-    // Fallback otomatis jika transmisi gagal saat sinyal terputus tiba-tiba
-    saveOrderOffline(payload);
-    finalizeOrderSuccess(cashPaid - totalAmount, true);
+    alert('Terjadi kesalahan jaringan');
   } finally {
     btn.disabled = false;
     btn.innerText = 'SELESAIKAN TRANSAKSI';
-  }
-}
-
-function saveOrderOffline(payload) {
-  const queue = JSON.parse(localStorage.getItem('wrr_offline_orders') || '[]');
-  queue.push({
-    offlineId: 'OFF-' + Date.now(),
-    payload: payload,
-    token: currentUser.token,
-    username: currentUser.username
-  });
-  localStorage.setItem('wrr_offline_orders', JSON.stringify(queue));
-}
-
-function finalizeOrderSuccess(kembalian, isOffline, orderId) {
-  const notif = isOffline
-    ? `[MODE OFFLINE]\nTransaksi berhasil disimpan di memori HP.\nKembalian: Rp ${kembalian.toLocaleString('id-ID')}\n(Akan otomatis disinkronkan saat online)`
-    : `Transaksi Berhasil!\nID: ${orderId}\nKembalian: Rp ${kembalian.toLocaleString('id-ID')}`;
-
-  alert(notif);
-  cart = [];
-  document.getElementById('orderCust').value = '';
-  document.getElementById('orderTable').value = '';
-  document.getElementById('inputCashPaid').value = '';
-  updateCartUI();
-  navToTab('menu');
-}
-
-async function syncOfflineOrders() {
-  const queue = JSON.parse(localStorage.getItem('wrr_offline_orders') || '[]');
-  if (!queue.length) return;
-
-  const remaining = [];
-  for (const item of queue) {
-    try {
-      const res = await fetch(GAS_API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({
-          action: 'submitOrder',
-          token: item.token,
-          username: item.username,
-          payload: item.payload
-        })
-      });
-      const result = await res.json();
-      if (result.status !== 'SUCCESS') {
-        remaining.push(item);
-      }
-    } catch (err) {
-      remaining.push(item);
-    }
-  }
-
-  localStorage.setItem('wrr_offline_orders', JSON.stringify(remaining));
-  if (remaining.length === 0) {
-    alert('Semua transaksi offline berhasil disinkronkan ke server!');
-    loadCatalog();
-    loadShiftHistory();
   }
 }
 
@@ -440,123 +291,99 @@ async function loadShiftHistory() {
   if (!container || !currentUser) return;
 
   try {
-    const res = await fetch(`${GAS_API_URL}?action=getHistory&token=${currentUser.token}&username=${currentUser.username}&shift=${currentUser.shift}`);
+    const res = await fetch(`${GAS_API_URL}?action=getHistory&token=${currentUser.token}&username=${currentUser.username}`);
     const result = await res.json();
 
     if (result.status === 'SUCCESS') {
       if (!result.data.length) {
-        container.innerHTML = `<div class="text-center text-secondary py-5 small">Belum ada transaksi di shift ini</div>`;
+        container.innerHTML = `<div class="text-center text-secondary py-5 small">Belum ada log penjualan</div>`;
         return;
       }
 
       container.innerHTML = result.data.map(o => `
         <div class="card bg-dark-card border-0 p-3 mb-2">
           <div class="d-flex justify-content-between align-items-center mb-1">
-            <span class="fw-bold text-white small">${o.id}</span>
-            <span class="badge ${o.status === 'Void' ? 'bg-danger' : 'bg-success'}">${o.status}</span>
+            <span class="fw-bold text-white small">${o.id} <span class="badge bg-secondary">${o.cabang}</span></span>
+            <span class="badge ${o.status === 'Kasbon' ? 'bg-warning text-dark' : (o.status === 'Void' ? 'bg-danger' : 'bg-success')}">${o.status}</span>
           </div>
           <div class="d-flex justify-content-between align-items-center text-secondary small">
-            <span>Meja: ${o.meja} | ${o.pelanggan} (${o.jam})</span>
+            <span>${o.pelanggan} | Meja ${o.meja} (${o.metode})</span>
             <span class="fw-bold text-accent">Rp ${Number(o.total).toLocaleString('id-ID')}</span>
           </div>
-          ${(currentUser.role === 'Owner' && o.status !== 'Void') ? `
-            <div class="text-end mt-2">
-              <button class="btn btn-sm btn-outline-danger py-0 px-2" onclick="voidOrderPrompt('${o.id}')">Batalkan (Void)</button>
-            </div>
-          ` : ''}
         </div>
       `).join('');
     }
   } catch (e) {
-    container.innerHTML = `<div class="text-center text-danger py-4 small">Gagal memuat riwayat</div>`;
+    container.innerHTML = `<div class="text-center text-danger py-4 small">Gagal memuat log</div>`;
   }
 }
 
-async function voidOrderPrompt(orderId) {
-  const reason = prompt(`Masukkan alasan pembatalan pesanan ${orderId}:`);
-  if (!reason) return;
+async function loadKasbonData() {
+  const container = document.getElementById('kasbonListContainer');
+  try {
+    const res = await fetch(`${GAS_API_URL}?action=getKasbon&token=${currentUser.token}&username=${currentUser.username}&status=Belum Lunas`);
+    const result = await res.json();
+
+    if (result.status === 'SUCCESS') {
+      if (!result.data.length) {
+        container.innerHTML = `<div class="text-center text-secondary py-5 small">Tidak ada kasbon aktif</div>`;
+        return;
+      }
+
+      container.innerHTML = result.data.map(k => `
+        <div class="card bg-dark-card border-0 p-3 mb-2">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <span class="fw-bold text-white">${k.pelanggan} <small class="text-secondary">(${k.cabang})</small></span>
+            <span class="badge bg-warning text-dark">${k.status}</span>
+          </div>
+          <div class="d-flex justify-content-between align-items-center small mb-2">
+            <span class="text-secondary">${k.tanggal}</span>
+            <span class="fw-bold text-danger">Sisa: Rp ${Number(k.sisa).toLocaleString('id-ID')}</span>
+          </div>
+          <button class="btn btn-sm btn-outline-custom w-100" onclick="openPayKasbonModal('${k.id}', '${k.pelanggan}', ${k.sisa})">Bayar Kasbon</button>
+        </div>
+      `).join('');
+    }
+  } catch (e) {
+    container.innerHTML = `<div class="text-center text-danger py-4 small">Gagal memuat buku kasbon</div>`;
+  }
+}
+
+function openPayKasbonModal(id, nama, sisa) {
+  document.getElementById('modalKasbonId').value = id;
+  document.getElementById('modalKasbonName').innerText = nama;
+  document.getElementById('modalKasbonSisa').innerText = 'Rp ' + Number(sisa).toLocaleString('id-ID');
+  document.getElementById('modalKasbonPayAmount').value = sisa;
+  new bootstrap.Modal(document.getElementById('payKasbonModal')).show();
+}
+
+async function submitPayKasbon() {
+  const idKasbon = document.getElementById('modalKasbonId').value;
+  const nominal = Number(document.getElementById('modalKasbonPayAmount').value);
+  const method = document.getElementById('modalKasbonMethod').value;
+
+  if (nominal <= 0) return alert('Nominal pembayaran tidak valid');
 
   try {
     const res = await fetch(GAS_API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({
-        action: 'voidOrder',
+        action: 'payKasbon',
         token: currentUser.token,
         username: currentUser.username,
-        payload: { orderId, reason }
+        payload: { idKasbon, bayarNominal: nominal, metodeBayar: method }
       })
     });
     const result = await res.json();
     if (result.status === 'SUCCESS') {
       alert(result.message);
-      loadShiftHistory();
-      loadCatalog();
+      bootstrap.Modal.getInstance(document.getElementById('payKasbonModal')).hide();
+      loadKasbonData();
     } else {
       alert('Gagal: ' + result.message);
     }
   } catch (e) {
     alert('Koneksi gagal');
-  }
-}
-
-async function fetchOwnerReport() {
-  if (!currentUser || currentUser.role !== 'Owner') return;
-  const date = document.getElementById('reportDatePicker').value;
-
-  try {
-    const res = await fetch(`${GAS_API_URL}?action=getReport&date=${date}&token=${currentUser.token}&username=${currentUser.username}`);
-    const result = await res.json();
-
-    if (result.status === 'SUCCESS') {
-      const s = result.summary;
-      document.getElementById('statOmset').innerText = 'Rp ' + Number(s.omset).toLocaleString('id-ID');
-      document.getElementById('statHpp').innerText = 'Rp ' + Number(s.hpp).toLocaleString('id-ID');
-      document.getElementById('statOps').innerText = 'Rp ' + Number(s.operasional).toLocaleString('id-ID');
-      document.getElementById('statNet').innerText = 'Rp ' + Number(s.labaBersih).toLocaleString('id-ID');
-      document.getElementById('statShiftPagi').innerText = 'Rp ' + Number(result.shiftOmset.Pagi || 0).toLocaleString('id-ID');
-      document.getElementById('statShiftMalam').innerText = 'Rp ' + Number(result.shiftOmset.Malam || 0).toLocaleString('id-ID');
-    }
-  } catch (e) {
-    alert('Gagal mengambil data laporan finansial');
-  }
-}
-
-async function submitExpenseForm(e) {
-  e.preventDefault();
-  const btn = document.getElementById('btnSaveExpense');
-  btn.disabled = true;
-
-  const payload = {
-    kategori: document.getElementById('expCategory').value,
-    nominal: document.getElementById('expAmount').value,
-    deskripsi: document.getElementById('expDesc').value.trim(),
-    shift: currentUser.shift
-  };
-
-  try {
-    const res = await fetch(GAS_API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({
-        action: 'recordExpense',
-        token: currentUser.token,
-        username: currentUser.username,
-        payload: payload
-      })
-    });
-    const result = await res.json();
-
-    if (result.status === 'SUCCESS') {
-      bootstrap.Modal.getInstance(document.getElementById('expenseModal')).hide();
-      document.getElementById('expAmount').value = '';
-      document.getElementById('expDesc').value = '';
-      alert('Pengeluaran berhasil dicatat!');
-      if (currentUser.role === 'Owner') fetchOwnerReport();
-    }
-  } catch (e) {
-    alert('Gagal mencatat beban');
-  } finally {
-    btn.disabled = false;
   }
 }
