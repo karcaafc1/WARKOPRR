@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WARKOP RR - Kasir & POS</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container-fluid">
+    <div class="row">
+      <!-- Sisi Kiri: Menu -->
+      <div class="col-md-8 py-3">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h3 class="fw-bold mb-0">WARKOP RR ☕</h3>
+          <input type="text" id="searchBox" class="form-control w-50" placeholder="Cari kopi, mie, cemilan..." onkeyup="filterMenu()">
+        </div>
+        <div class="row g-3" id="menuContainer">
+          <div class="text-center py-5 text-muted">Memuat menu dari cloud...</div>
+        </div>
+      </div>
+
+      <!-- Sisi Kanan: Order Kasir -->
+      <div class="col-md-4 order-sidebar p-3 d-flex flex-column">
+        <div class="d-flex justify-content-between align-items-center border-bottom pb-2 mb-2">
+          <h5 class="fw-bold mb-0">Pesanan Aktif</h5>
+          <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#expenseModal">
+            + Catat Beban
+          </button>
+        </div>
+
+        <div class="row g-2 mb-2">
+          <div class="col-6">
+            <input type="text" id="custName" class="form-control form-control-sm" placeholder="Nama Pelanggan">
+          </div>
+          <div class="col-6">
+            <input type="number" id="tableNo" class="form-control form-control-sm" placeholder="No. Meja">
+          </div>
+        </div>
+
+        <div class="flex-grow-1 overflow-auto border-bottom py-2" id="cartList">
+          <div class="text-center text-muted small py-4">Belum ada item dipilih</div>
+        </div>
+        
+        <div class="pt-3">
+          <div class="d-flex justify-content-between fw-bold mb-2 fs-5">
+            <span>Total:</span>
+            <span id="grandTotal" class="text-primary">Rp 0</span>
+          </div>
+          <select id="payMethod" class="form-select mb-3">
+            <option value="Tunai">Tunai</option>
+            <option value="QRIS">QRIS</option>
+            <option value="Transfer">Transfer</option>
+          </select>
+          <button class="btn btn-dark w-100 py-2 fw-semibold" id="btnCheckout" onclick="processCheckout()">
+            Selesaikan Transaksi
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Catat Pengeluaran Beban -->
+  <div class="modal fade" id="expenseModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content border-0 shadow">
+        <div class="modal-header bg-danger text-white">
+          <h6 class="modal-title fw-bold">Catat Beban Operasional</h6>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <form id="expenseForm" onsubmit="submitExpense(event)">
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">Kategori</label>
+              <select id="expCategory" class="form-select" required>
+                <option value="Bahan Baku Habis">Bahan Baku (Es, Gas, Galon)</option>
+                <option value="Kemasan">Kemasan (Cup, Sedotan, Plastik)</option>
+                <option value="Operasional">Kebersihan & Toko</option>
+                <option value="Lain-lain">Lain-lain</option>
+              </select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">Nominal (Rp)</label>
+              <input type="number" id="expAmount" class="form-control" placeholder="0" min="500" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">Deskripsi</label>
+              <textarea id="expDescription" class="form-control" rows="2" placeholder="Contoh: Es kristal 2 karung" required></textarea>
+            </div>
+            <div class="mb-2">
+              <label class="form-label small fw-semibold">Kasir / PIC</label>
+              <input type="text" id="expPic" class="form-control" placeholder="Nama Kasir" required>
+            </div>
+          </div>
+          <div class="modal-footer bg-light py-2">
+            <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Batal</button>
+            <button type="submit" id="btnSaveExpense" class="btn btn-sm btn-danger fw-semibold">Simpan</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
