@@ -1,29 +1,23 @@
+// Pastikan URL deployment utuh tanpa ada celah spasi
 const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbzQ3G0VdXVfCgd0RczLTGOaZNErFIR0Lq1vt0ISAmTEcjc8pC7REgg5cBzH5DPffTvdGA/exec';
 
 let currentUser = null;
 let menuCatalog = [];
 let cart = [];
 let currentCategory = 'Semua';
+let liveMonitorInterval = null;
 
-// PWA & Service Worker
+// PWA Service Worker
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch(err => {
-      console.log('SW Registration error:', err);
-    });
+    navigator.serviceWorker.register('./sw.js').catch(err => console.log('SW Info:', err));
   });
 }
 
-// Auto sync antrean offline saat online
-window.addEventListener('online', () => {
-  syncOfflineOrders();
-});
+window.addEventListener('online', () => syncOfflineOrders());
+window.addEventListener('DOMContentLoaded', () => restoreSession());
 
-window.addEventListener('DOMContentLoaded', () => {
-  restoreSession();
-});
-
-// Helper request POST universal untuk mengatasi CORS Google Apps Script
+// Universal Helper POST anti-CORS
 async function postToGAS(action, payload = {}, extraParams = {}) {
   const bodyData = new URLSearchParams();
   bodyData.append('action', action);
@@ -76,12 +70,13 @@ async function handleAuthLogin(e) {
     alert('Koneksi backend gagal: ' + err.message);
   } finally {
     btn.disabled = false;
-    btn.innerText = 'Masuk ke Kasir';
+    btn.innerText = 'Masuk ke Sistem';
   }
 }
 
 function handleAuthLogout() {
-  if (!confirm('Akhiri shift dan keluar?')) return;
+  if (!confirm('Akhiri sesi dan keluar?')) return;
+  if (liveMonitorInterval) clearInterval(liveMonitorInterval);
   postToGAS('logout', { username: currentUser.username });
   localStorage.removeItem('wrr_session');
   location.reload();
@@ -91,9 +86,45 @@ function enterApplication() {
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('mainApp').style.display = 'block';
   document.getElementById('headerUserLabel').innerText = `${currentUser.cabang} | ${currentUser.nama} (${currentUser.shift})`;
-  loadCatalog();
-  loadShiftHistory();
-  syncOfflineOrders();
+
+  const dockDashboard = document.getElementById('dockDashboard');
+  const dockReport = document.getElementById('dockReport');
+  const dockMenu = document.getElementById('dockMenu');
+  const dockCart = document.getElementById('dockCart');
+  const wrapLembur = document.getElementById('wrapLembur');
+  const floatBar = document.getElementById('floatingCartBar');
+
+  if (currentUser.role === 'Owner') {
+    // Tampilan Khusus OWNER: Prioritaskan Monitoring & Laporan
+    if (dockDashboard) dockDashboard.classList.remove('d-none');
+    if (dockReport) dockReport.classList.remove('d-none');
+    if (dockMenu) dockMenu.classList.add('d-none');
+    if (dockCart) dockCart.classList.add('d-none');
+    if (wrapLembur) wrapLembur.classList.add('d-none');
+    if (floatBar) floatBar.style.display = 'none';
+
+    // Langsung buka Dashboard Monitoring Live sebagai halaman utama
+    navToTab('dashboard');
+
+    // Aktifkan Live Polling otomatis setiap 30 detik
+    if (liveMonitorInterval) clearInterval(liveMonitorInterval);
+    liveMonitorInterval = setInterval(() => {
+      loadLiveMonitorData(false);
+    }, 30000);
+
+  } else {
+    // Tampilan Khusus KASIR: Prioritaskan Menu & Kasir
+    if (dockDashboard) dockDashboard.classList.add('d-none');
+    if (dockReport) dockReport.classList.add('d-none');
+    if (dockMenu) dockMenu.classList.remove('d-none');
+    if (dockCart) dockCart.classList.remove('d-none');
+    if (wrapLembur) wrapLembur.classList.remove('d-none');
+
+    navToTab('menu');
+    loadCatalog();
+    loadShiftHistory();
+    syncOfflineOrders();
+  }
 }
 
 function showLoginScreen() {
@@ -111,10 +142,118 @@ function navToTab(tabName) {
   if (view) view.classList.add('active');
   if (dock) dock.classList.add('active');
 
+  if (tabName === 'dashboard') loadLiveMonitorData(true);
   if (tabName === 'history') loadShiftHistory();
   if (tabName === 'kasbon') loadKasbonData();
+  if (tabName === 'report') loadOwnerReport();
 }
 
+// FUNGSI MONITORING LIVE OWNER
+async function loadLiveMonitorData(isManual) {
+  if (!currentUser || currentUser.role !== 'Owner') return;
+
+  const timerEl = document.getElementById('lastUpdatedTimer');
+  if (timerEl) timerEl.innerText = 'Menyinkronkan...';
+
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const res = await fetch(`${GAS_API_URL}?action=getReport&token=${currentUser.token}&username=${currentUser.username}&date=${today}&cabang=Semua`);
+    const result = await res.json();
+
+    const resHist = await fetch(`${GAS_API_URL}?action=getHistory&token=${currentUser.token}&username=${currentUser.username}`);
+    const resultHist = await resHist.json();
+
+    if (result.status === 'SUCCESS') {
+      const ringkas = result.data.ringkasan;
+      document.getElementById('monTotalOmset').innerText = 'Rp ' + Number(ringkas.totalOmsetKotor).toLocaleString('id-ID');
+      document.getElementById('monNetCash').innerText = 'Kas Bersih: Rp ' + Number(ringkas.labaBersihKas).toLocaleString('id-ID');
+      document.getElementById('monTotalTrx').innerText = ringkas.jumlahTransaksi + ' Struk';
+      document.getElementById('monTotalPiutang').innerText = 'Piutang: Rp ' + Number(ringkas.totalPiutangBelumLunas).toLocaleString('id-ID');
+
+      // Breakdown Per Cabang
+      if (resultHist.status === 'SUCCESS') {
+        const orders = resultHist.data;
+        let cenOmset = 0, cenCount = 0;
+        let mapOmset = 0, mapCount = 0;
+
+        orders.forEach(o => {
+          if (o.status !== 'Void') {
+            if (o.cabang.includes('Cenderawasih')) {
+              cenOmset += o.total;
+              cenCount++;
+            } else if (o.cabang.includes('Mappaoddang')) {
+              mapOmset += o.total;
+              mapCount++;
+            }
+          }
+        });
+
+        document.getElementById('monCenOmset').innerText = 'Rp ' + cenOmset.toLocaleString('id-ID');
+        document.getElementById('monCenTrx').innerText = cenCount + ' Transaksi';
+        document.getElementById('monMapOmset').innerText = 'Rp ' + mapOmset.toLocaleString('id-ID');
+        document.getElementById('monMapTrx').innerText = mapCount + ' Transaksi';
+
+        // Render Live Feed Log
+        renderLiveMonitorFeed(orders);
+      }
+    }
+
+    if (timerEl) {
+      const d = new Date();
+      timerEl.innerText = `Sync: ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')}`;
+    }
+  } catch (err) {
+    if (timerEl) timerEl.innerText = 'Sync Gagal';
+  }
+}
+
+function renderLiveMonitorFeed(orders) {
+  const container = document.getElementById('liveOrderFeedList');
+  if (!container) return;
+
+  if (!orders.length) {
+    container.innerHTML = `<div class="text-center text-secondary py-5 small">Belum ada transaksi hari ini</div>`;
+    return;
+  }
+
+  container.innerHTML = orders.map(o => {
+    const isCenderawasih = o.cabang.includes('Cenderawasih');
+    const badgeCabang = isCenderawasih
+      ? `<span class="badge badge-cenderawasih">Cenderawasih</span>`
+      : `<span class="badge badge-mappaoddang">Mappaoddang</span>`;
+
+    const badgeStatus = o.status === 'Kasbon'
+      ? `<span class="badge bg-warning text-dark">Kasbon</span>`
+      : (o.status === 'Void' ? `<span class="badge bg-danger">Void</span>` : `<span class="badge bg-success">Selesai</span>`);
+
+    return `
+      <div class="card bg-dark-card border-0 p-3 mb-2 shadow-sm">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <div class="d-flex align-items-center gap-2">
+            ${badgeCabang}
+            <span class="fw-bold text-white small">${o.id}</span>
+          </div>
+          <span class="small text-secondary">${o.jam}</span>
+        </div>
+        <div class="d-flex justify-content-between align-items-center small">
+          <div>
+            <span class="text-white fw-semibold">${o.pelanggan}</span>
+            <span class="text-secondary"> &bull; Meja ${o.meja} (${o.kasir})</span>
+          </div>
+          <div class="text-end">
+            <div class="fw-bold text-accent">Rp ${Number(o.total).toLocaleString('id-ID')}</div>
+            <div class="d-flex align-items-center justify-content-end gap-1">
+              <small class="text-info">${o.metode}</small>
+              ${badgeStatus}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// LOGIKA KASIR & KATALOG POS
 async function loadCatalog() {
   const container = document.getElementById('catalogGrid');
   try {
@@ -205,7 +344,10 @@ function updateCartUI() {
   grandTotalEl.innerText = 'Rp ' + totalAmount.toLocaleString('id-ID');
   floatCount.innerText = totalQty;
   floatTotal.innerText = 'Rp ' + totalAmount.toLocaleString('id-ID');
-  floatBar.style.display = totalQty > 0 ? 'block' : 'none';
+  
+  if (currentUser && currentUser.role !== 'Owner') {
+    floatBar.style.display = totalQty > 0 ? 'block' : 'none';
+  }
 
   if (!cart.length) {
     list.innerHTML = `<div class="text-center text-secondary py-4 small">Belum ada pesanan</div>`;
@@ -275,7 +417,7 @@ async function processOrderCheckout() {
 
   const cashPaid = Number(document.getElementById('inputCashPaid').value) || totalAmount;
   if (payMethod === 'Tunai' && cashPaid < totalAmount) {
-    return alert('Uang yang diterima kurang dari total belanja!');
+    return alert('Uang yang diterima kurang dari total tagihan!');
   }
 
   const btn = document.getElementById('btnSubmitOrder');
@@ -294,7 +436,6 @@ async function processOrderCheckout() {
     items: [...cart]
   };
 
-  // Cadangkan offline jika browser tidak memiliki jaringan
   if (!navigator.onLine) {
     saveOrderOffline(payload);
     finalizeOrderSuccess(cashPaid - totalAmount, true);
@@ -370,7 +511,6 @@ async function syncOfflineOrders() {
 
   localStorage.setItem('wrr_offline_orders', JSON.stringify(remaining));
   if (remaining.length === 0) {
-    alert('Semua transaksi offline berhasil disinkronkan!');
     loadCatalog();
     loadShiftHistory();
   }
@@ -473,5 +613,48 @@ async function submitPayKasbon() {
     }
   } catch (e) {
     alert('Koneksi gagal saat melunasi kasbon');
+  }
+}
+
+async function loadOwnerReport() {
+  if (!currentUser || currentUser.role !== 'Owner') return;
+
+  const filterCabang = document.getElementById('reportFilterCabang').value;
+  const filterDate = document.getElementById('reportFilterDate').value;
+
+  try {
+    const res = await fetch(`${GAS_API_URL}?action=getReport&token=${currentUser.token}&username=${currentUser.username}&date=${filterDate}&cabang=${filterCabang}`);
+    const result = await res.json();
+
+    if (result.status === 'SUCCESS') {
+      const d = result.data.ringkasan;
+      document.getElementById('repOmsetKotor').innerText = 'Rp ' + Number(d.totalOmsetKotor).toLocaleString('id-ID');
+      document.getElementById('repLabaBersih').innerText = 'Rp ' + Number(d.labaBersihKas).toLocaleString('id-ID');
+      document.getElementById('repTunai').innerText = 'Rp ' + Number(d.totalTunai).toLocaleString('id-ID');
+      document.getElementById('repQris').innerText = 'Rp ' + Number(d.totalQris).toLocaleString('id-ID');
+      document.getElementById('repPengeluaran').innerText = 'Rp ' + Number(d.totalPengeluaran).toLocaleString('id-ID');
+      document.getElementById('repKasbonHariIni').innerText = 'Rp ' + Number(d.totalKasbonBaru).toLocaleString('id-ID');
+      document.getElementById('repTotalPiutang').innerText = 'Rp ' + Number(d.totalPiutangBelumLunas).toLocaleString('id-ID');
+      document.getElementById('repJumlahTrx').innerText = d.jumlahTransaksi + ' Struk';
+
+      const expContainer = document.getElementById('repListPengeluaran');
+      if (!result.data.pengeluaran.length) {
+        expContainer.innerHTML = `<div class="text-center text-secondary py-3 small">Tidak ada pengeluaran</div>`;
+      } else {
+        expContainer.innerHTML = result.data.pengeluaran.map(e => `
+          <div class="card bg-dark-card border-0 p-2 mb-1 small d-flex justify-content-between flex-row">
+            <div>
+              <span class="text-white fw-bold">[${e.cabang}] ${e.kategori}</span>
+              <div class="text-secondary" style="font-size:0.75rem;">${e.deskripsi} (${e.pic})</div>
+            </div>
+            <span class="text-danger fw-bold">Rp ${Number(e.nominal).toLocaleString('id-ID')}</span>
+          </div>
+        `).join('');
+      }
+    } else {
+      alert('Gagal memuat laporan: ' + result.message);
+    }
+  } catch (err) {
+    alert('Koneksi backend laporan gagal');
   }
 }
