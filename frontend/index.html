@@ -12,29 +12,29 @@
 </head>
 <body class="theme-dark">
 
-  <!-- AUTH SCREEN: MODAL LOGIN -->
+  <!-- AUTH SCREEN -->
   <div id="loginScreen" class="auth-wrapper">
     <div class="auth-card shadow-lg p-4">
       <div class="text-center mb-4">
         <div class="brand-logo">☕</div>
         <h4 class="fw-bold text-white mb-1">WARKOP RR</h4>
-        <small class="text-secondary">Point of Sale System</small>
+        <small class="text-secondary">Enterprise Multi-Branch POS</small>
       </div>
       
       <form id="loginForm" onsubmit="handleAuthLogin(event)">
         <div class="mb-3">
           <label class="form-label text-light small">Username</label>
-          <input type="text" id="loginUsername" class="form-control form-control-dark" placeholder="Masukkan username" required autocomplete="username">
+          <input type="text" id="loginUsername" class="form-control form-control-dark" placeholder="Username kasir" required autocomplete="username">
         </div>
         <div class="mb-3">
           <label class="form-label text-light small">Password</label>
-          <input type="password" id="loginPassword" class="form-control form-control-dark" placeholder="Masukkan password" required autocomplete="current-password">
+          <input type="password" id="loginPassword" class="form-control form-control-dark" placeholder="Password" required autocomplete="current-password">
         </div>
         <div class="mb-4">
-          <label class="form-label text-light small">Pilih Shift Kerja</label>
+          <label class="form-label text-light small">Pilih Shift</label>
           <select id="loginShift" class="form-select form-select-dark">
-            <option value="Pagi">Shift Pagi (08:00 - 17:00)</option>
-            <option value="Malam">Shift Malam (17:00 - 02:00)</option>
+            <option value="Pagi">Shift Pagi</option>
+            <option value="Malam">Shift Malam</option>
           </select>
         </div>
         <button type="submit" id="btnLoginSubmit" class="btn btn-primary-custom w-100 py-2 fw-semibold">
@@ -46,41 +46,34 @@
 
   <!-- MAIN APP CONTAINER -->
   <div id="mainApp" style="display: none;">
-    <!-- TOP HEADER -->
     <header class="app-header px-3 py-2 d-flex justify-content-between align-items-center">
       <div class="d-flex align-items-center gap-2">
         <span class="fs-5">☕</span>
         <div>
           <h6 class="mb-0 fw-bold text-white lh-1">WARKOP RR</h6>
-          <small class="user-badge" id="headerUserLabel">Kasir: -</small>
+          <small class="user-badge" id="headerUserLabel">Cabang: -</small>
         </div>
       </div>
 
       <div class="d-flex align-items-center gap-2">
-        <!-- Toggle Lembur -->
         <div class="lembur-toggle d-flex align-items-center px-2 py-1">
           <input type="checkbox" id="checkLembur" class="form-check-input me-1 m-0">
           <label for="checkLembur" class="small text-white m-0">Lembur</label>
         </div>
-        <!-- Tombol Logout -->
         <button class="btn-icon" onclick="handleAuthLogout()" title="Keluar">
           <i class="bi bi-box-arrow-right"></i>
         </button>
       </div>
     </header>
 
-    <!-- VIEWS -->
     <main class="app-content pb-5 mb-4">
-      
-      <!-- VIEW 1: MENU POS (KASIR & OWNER) -->
+      <!-- VIEW 1: MENU POS -->
       <section id="viewMenu" class="tab-view active">
-        <!-- Search & Category Filters -->
         <div class="px-3 pt-2">
           <div class="search-input-wrap mb-2">
             <i class="bi bi-search"></i>
-            <input type="text" id="searchMenu" class="form-control form-control-dark ps-5" placeholder="Cari kopi, indomie, porsi..." onkeyup="renderCatalog()">
+            <input type="text" id="searchMenu" class="form-control form-control-dark ps-5" placeholder="Cari kopi, indomie..." onkeyup="renderCatalog()">
           </div>
-
           <div class="category-pills d-flex gap-1 overflow-auto pb-1">
             <button class="cat-pill active" onclick="setCategory('Semua', this)">Semua</button>
             <button class="cat-pill" onclick="setCategory('Minuman', this)">Minuman</button>
@@ -88,23 +81,19 @@
             <button class="cat-pill" onclick="setCategory('Tambahan', this)">Add-on</button>
           </div>
         </div>
-
-        <!-- Catalog Items Grid -->
         <div class="container-fluid px-3 pt-2">
-          <div class="row g-2" id="catalogGrid">
-            <div class="text-center text-secondary py-5">Memuat katalog warkop...</div>
-          </div>
+          <div class="row g-2" id="catalogGrid"></div>
         </div>
       </section>
 
-      <!-- VIEW 2: KERANJANG CHECKOUT -->
+      <!-- VIEW 2: CHECKOUT CART -->
       <section id="viewCart" class="tab-view">
         <div class="container-fluid px-3 pt-2">
           <div class="card bg-dark-card border-0 p-3 mb-3">
-            <h6 class="fw-bold text-white mb-3">Data Meja & Pelanggan</h6>
+            <h6 class="fw-bold text-white mb-2">Data Pelanggan & Meja</h6>
             <div class="row g-2">
               <div class="col-7">
-                <input type="text" id="orderCust" class="form-control form-control-dark" placeholder="Nama Pelanggan">
+                <input type="text" id="orderCust" class="form-control form-control-dark" placeholder="Nama Pelanggan (Wajib bila Kasbon)">
               </div>
               <div class="col-5">
                 <input type="text" id="orderTable" class="form-control form-control-dark" placeholder="No. Meja">
@@ -112,21 +101,17 @@
             </div>
           </div>
 
-          <!-- Daftar Item Keranjang -->
           <div class="card bg-dark-card border-0 p-3 mb-3">
             <div class="d-flex justify-content-between align-items-center mb-2">
               <h6 class="fw-bold text-white mb-0">Pesanan Dipilih</h6>
               <button class="btn btn-sm btn-link text-danger p-0 text-decoration-none" onclick="clearCart()">Kosongkan</button>
             </div>
-            <div id="cartItemsList" class="cart-scroll-area">
-              <div class="text-center text-secondary py-4 small">Belum ada menu dipilih</div>
-            </div>
+            <div id="cartItemsList" class="cart-scroll-area"></div>
           </div>
 
-          <!-- Pembayaran & Hitung Kembalian -->
           <div class="card bg-dark-card border-0 p-3 mb-3">
             <div class="d-flex justify-content-between align-items-center mb-2">
-              <span class="text-secondary">Subtotal Pesanan:</span>
+              <span class="text-secondary">Total Tagihan:</span>
               <span class="fw-bold text-accent fs-5" id="cartGrandTotal">Rp 0</span>
             </div>
 
@@ -135,14 +120,16 @@
               <div class="btn-group w-100" role="group">
                 <input type="radio" class="btn-check" name="payType" id="payTunai" value="Tunai" checked onchange="togglePayMethod()">
                 <label class="btn btn-outline-custom btn-sm" for="payTunai">Tunai</label>
+
                 <input type="radio" class="btn-check" name="payType" id="payQris" value="QRIS" onchange="togglePayMethod()">
                 <label class="btn btn-outline-custom btn-sm" for="payQris">QRIS</label>
-                <input type="radio" class="btn-check" name="payType" id="payTransfer" value="Transfer" onchange="togglePayMethod()">
-                <label class="btn btn-outline-custom btn-sm" for="payTransfer">Transfer</label>
+
+                <input type="radio" class="btn-check" name="payType" id="payKasbon" value="Kasbon" onchange="togglePayMethod()">
+                <label class="btn btn-outline-custom btn-sm text-warning" for="payKasbon">Kasbon</label>
               </div>
             </div>
 
-            <!-- Kalkulator Kembalian Tunai -->
+            <!-- Kalkulator Tunai -->
             <div id="cashCalcArea">
               <label class="small text-secondary mb-1">Uang Diterima (Rp)</label>
               <input type="number" id="inputCashPaid" class="form-control form-control-dark mb-2" placeholder="0" oninput="calcChange()">
@@ -165,70 +152,30 @@
         </div>
       </section>
 
-      <!-- VIEW 3: RIWAYAT KASIR -->
+      <!-- VIEW 3: RIWAYAT / LOG PENJUALAN -->
       <section id="viewHistory" class="tab-view">
         <div class="container-fluid px-3 pt-2">
           <div class="d-flex justify-content-between align-items-center mb-2">
-            <h6 class="fw-bold text-white mb-0">Riwayat Transaksi Shift Ini</h6>
-            <button class="btn btn-sm btn-outline-custom" onclick="loadShiftHistory()">
-              <i class="bi bi-arrow-clockwise"></i>
-            </button>
+            <h6 class="fw-bold text-white mb-0">Log Penjualan Shift Ini</h6>
+            <button class="btn btn-sm btn-outline-custom" onclick="loadShiftHistory()"><i class="bi bi-arrow-clockwise"></i></button>
           </div>
-          <div id="historyOrdersList" class="history-list-area">
-            <div class="text-center text-secondary py-5">Memuat riwayat...</div>
-          </div>
+          <div id="historyOrdersList"></div>
         </div>
       </section>
 
-      <!-- VIEW 4: LAPORAN FINANSIAL (HANYA OWNER) -->
-      <section id="viewOwner" class="tab-view">
+      <!-- VIEW 4: BUKU KASBON -->
+      <section id="viewKasbon" class="tab-view">
         <div class="container-fluid px-3 pt-2">
-          <div class="card bg-dark-card border-0 p-3 mb-3">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-              <h6 class="fw-bold text-white mb-0">Laporan Owner</h6>
-              <input type="date" id="reportDatePicker" class="form-control form-control-dark form-control-sm w-auto" onchange="fetchOwnerReport()">
-            </div>
-
-            <div class="row g-2 mb-3">
-              <div class="col-6">
-                <div class="stat-card">
-                  <span class="stat-title">Omset Bersih</span>
-                  <span class="stat-val text-accent" id="statOmset">Rp 0</span>
-                </div>
-              </div>
-              <div class="col-6">
-                <div class="stat-card">
-                  <span class="stat-title">Modal HPP</span>
-                  <span class="stat-val text-secondary" id="statHpp">Rp 0</span>
-                </div>
-              </div>
-              <div class="col-6">
-                <div class="stat-card">
-                  <span class="stat-title">Beban Operasional</span>
-                  <span class="stat-val text-danger" id="statOps">Rp 0</span>
-                </div>
-              </div>
-              <div class="col-6">
-                <div class="stat-card">
-                  <span class="stat-title">Laba Bersih (Net)</span>
-                  <span class="stat-val text-success" id="statNet">Rp 0</span>
-                </div>
-              </div>
-            </div>
-
-            <div class="stat-card mb-2">
-              <div class="d-flex justify-content-between text-secondary small mb-1">
-                <span>Shift Pagi: <b class="text-white" id="statShiftPagi">Rp 0</b></span>
-                <span>Shift Malam: <b class="text-white" id="statShiftMalam">Rp 0</b></span>
-              </div>
-            </div>
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="fw-bold text-white mb-0">Buku Kasbon Pelanggan</h6>
+            <button class="btn btn-sm btn-outline-custom" onclick="loadKasbonData()"><i class="bi bi-arrow-clockwise"></i></button>
           </div>
+          <div id="kasbonListContainer"></div>
         </div>
       </section>
-
     </main>
 
-    <!-- BOTTOM FLOATING CART SUMMARY (HP) -->
+    <!-- FLOATING CART -->
     <div id="floatingCartBar" class="floating-cart" onclick="navToTab('cart')">
       <div class="d-flex justify-content-between align-items-center">
         <div class="d-flex align-items-center gap-2">
@@ -242,7 +189,7 @@
       </div>
     </div>
 
-    <!-- BOTTOM NAVBAR DOCK -->
+    <!-- BOTTOM DOCK -->
     <nav class="bottom-dock d-flex justify-content-around align-items-center">
       <button class="dock-btn active" id="dockMenu" onclick="navToTab('menu')">
         <i class="bi bi-grid-fill"></i>
@@ -253,85 +200,54 @@
         <span>Keranjang</span>
       </button>
       <button class="dock-btn" id="dockHistory" onclick="navToTab('history')">
-        <i class="bi bi-clock-history"></i>
-        <span>Riwayat</span>
+        <i class="bi bi-journal-text"></i>
+        <span>Log Jual</span>
       </button>
-      <button class="dock-btn text-danger" data-bs-toggle="modal" data-bs-target="#expenseModal">
-        <i class="bi bi-wallet2"></i>
-        <span>Beban</span>
-      </button>
-      <!-- Tombol Laporan (Hanya Muncul Jika Owner) -->
-      <button class="dock-btn text-warning" id="dockOwner" style="display: none;" onclick="navToTab('owner')">
-        <i class="bi bi-graph-up-arrow"></i>
-        <span>Laporan</span>
+      <button class="dock-btn" id="dockKasbon" onclick="navToTab('kasbon')">
+        <i class="bi bi-book-half"></i>
+        <span>Kasbon</span>
       </button>
     </nav>
   </div>
 
-  <!-- MODAL CATAT BEBAN OPERASIONAL -->
-  <div class="modal fade" id="expenseModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered">
-      <div class="modal-content bg-dark-card border-0 text-white">
-        <div class="modal-header border-bottom border-dark py-2">
-          <h6 class="modal-title fw-bold">Catat Beban Toko</h6>
-          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-        </div>
-        <form onsubmit="submitExpenseForm(event)">
-          <div class="modal-body">
-            <div class="mb-2">
-              <label class="small text-secondary">Kategori</label>
-              <select id="expCategory" class="form-select form-select-dark" required>
-                <option value="Bahan Baku">Bahan Baku (Es Batu, Gas, Galon)</option>
-                <option value="Kemasan">Kemasan (Cup, Sedotan, Mika)</option>
-                <option value="Operasional">Operasional & Kebersihan</option>
-                <option value="Lain-lain">Lain-lain</option>
-              </select>
-            </div>
-            <div class="mb-2">
-              <label class="small text-secondary">Nominal (Rp)</label>
-              <input type="number" id="expAmount" class="form-control form-control-dark" min="500" placeholder="0" required>
-            </div>
-            <div class="mb-2">
-              <label class="small text-secondary">Keterangan</label>
-              <textarea id="expDesc" class="form-control form-control-dark" rows="2" placeholder="Contoh: Beli es kristal 2 karung" required></textarea>
-            </div>
-          </div>
-          <div class="modal-footer border-top border-dark py-2">
-            <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Batal</button>
-            <button type="submit" id="btnSaveExpense" class="btn btn-sm btn-danger fw-bold">Simpan Pengeluaran</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL KUSTOMISASI ITEM / CATATAN DAPUR -->
-  <div class="modal fade" id="itemCustomModal" tabindex="-1">
+  <!-- MODAL PELUNASAN KASBON -->
+  <div class="modal fade" id="payKasbonModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered modal-sm">
       <div class="modal-content bg-dark-card border-0 text-white">
         <div class="modal-header border-bottom border-dark py-2">
-          <h6 class="modal-title fw-bold" id="customItemTitle">Pesanan</h6>
+          <h6 class="modal-title fw-bold">Pelunasan Kasbon</h6>
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body">
-          <input type="hidden" id="customItemId">
-          <label class="small text-secondary mb-1">Catatan Khusus (Dapur / Barista):</label>
-          <div class="d-flex flex-wrap gap-1 mb-2">
-            <button type="button" class="btn btn-outline-custom btn-sm py-0 px-2" onclick="appendNote('Manis Tipis')">Manis Tipis</button>
-            <button type="button" class="btn btn-outline-custom btn-sm py-0 px-2" onclick="appendNote('Pahit/Keras')">Keras</button>
-            <button type="button" class="btn btn-outline-custom btn-sm py-0 px-2" onclick="appendNote('Setengah Matang')">1/2 Matang</button>
-            <button type="button" class="btn btn-outline-custom btn-sm py-0 px-2" onclick="appendNote('Pedas')">Pedas</button>
+          <input type="hidden" id="modalKasbonId">
+          <div class="mb-2">
+            <label class="small text-secondary">Nama Pelanggan</label>
+            <div class="fw-bold text-accent" id="modalKasbonName">-</div>
           </div>
-          <input type="text" id="customItemNote" class="form-control form-control-dark" placeholder="Tulis catatan tambahan...">
+          <div class="mb-2">
+            <label class="small text-secondary">Sisa Hutang</label>
+            <div class="fw-bold text-danger fs-5" id="modalKasbonSisa">Rp 0</div>
+          </div>
+          <div class="mb-2">
+            <label class="small text-secondary">Nominal Pembayaran (Rp)</label>
+            <input type="number" id="modalKasbonPayAmount" class="form-control form-control-dark" placeholder="0">
+          </div>
+          <div class="mb-2">
+            <label class="small text-secondary">Metode</label>
+            <select id="modalKasbonMethod" class="form-select form-select-dark">
+              <option value="Tunai">Tunai</option>
+              <option value="QRIS">QRIS</option>
+            </select>
+          </div>
         </div>
         <div class="modal-footer border-top border-dark py-2">
-          <button type="button" class="btn btn-primary-custom w-100 fw-bold" onclick="confirmAddToCartWithNote()">Masuk Keranjang</button>
+          <button type="button" class="btn btn-primary-custom w-100 fw-bold" onclick="submitPayKasbon()">Terima Pembayaran</button>
         </div>
       </div>
     </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="app.js"></script>
+  <script src="app.js?v=2.0"></script>
 </body>
 </html>
