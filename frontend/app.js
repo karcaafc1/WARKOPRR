@@ -5,9 +5,40 @@ let menuCatalog = [];
 let cart = [];
 let currentCategory = 'Semua';
 
+// PWA & Service Worker
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(err => {
+      console.log('SW Registration error:', err);
+    });
+  });
+}
+
+// Auto sync antrean offline saat online
+window.addEventListener('online', () => {
+  syncOfflineOrders();
+});
+
 window.addEventListener('DOMContentLoaded', () => {
   restoreSession();
 });
+
+// Helper request POST universal untuk mengatasi CORS Google Apps Script
+async function postToGAS(action, payload = {}, extraParams = {}) {
+  const bodyData = new URLSearchParams();
+  bodyData.append('action', action);
+  bodyData.append('payload', JSON.stringify(payload));
+
+  if (extraParams.token) bodyData.append('token', extraParams.token);
+  if (extraParams.username) bodyData.append('username', extraParams.username);
+
+  const res = await fetch(GAS_API_URL, {
+    method: 'POST',
+    body: bodyData,
+    redirect: 'follow'
+  });
+  return await res.json();
+}
 
 function restoreSession() {
   const saved = localStorage.getItem('wrr_session');
@@ -32,12 +63,7 @@ async function handleAuthLogin(e) {
   };
 
   try {
-    const res = await fetch(GAS_API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action: 'login', payload })
-    });
-    const result = await res.json();
+    const result = await postToGAS('login', payload);
 
     if (result.status === 'SUCCESS') {
       currentUser = result.user;
@@ -47,7 +73,7 @@ async function handleAuthLogin(e) {
       alert(result.message);
     }
   } catch (err) {
-    alert('Gagal login: ' + err.message);
+    alert('Koneksi backend gagal: ' + err.message);
   } finally {
     btn.disabled = false;
     btn.innerText = 'Masuk ke Kasir';
@@ -56,11 +82,7 @@ async function handleAuthLogin(e) {
 
 function handleAuthLogout() {
   if (!confirm('Akhiri shift dan keluar?')) return;
-  fetch(GAS_API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ action: 'logout', payload: { username: currentUser.username } })
-  });
+  postToGAS('logout', { username: currentUser.username });
   localStorage.removeItem('wrr_session');
   location.reload();
 }
@@ -71,6 +93,7 @@ function enterApplication() {
   document.getElementById('headerUserLabel').innerText = `${currentUser.cabang} | ${currentUser.nama} (${currentUser.shift})`;
   loadCatalog();
   loadShiftHistory();
+  syncOfflineOrders();
 }
 
 function showLoginScreen() {
@@ -99,10 +122,23 @@ async function loadCatalog() {
     const result = await res.json();
     if (result.status === 'SUCCESS') {
       menuCatalog = result.data;
+      localStorage.setItem('wrr_cached_menu', JSON.stringify(menuCatalog));
       renderCatalog();
+    } else {
+      loadFallbackCachedMenu(container, result.message);
     }
   } catch (e) {
-    container.innerHTML = `<div class="text-center text-danger py-5">Gagal sinkron menu</div>`;
+    loadFallbackCachedMenu(container);
+  }
+}
+
+function loadFallbackCachedMenu(container, errorMsg) {
+  const cached = localStorage.getItem('wrr_cached_menu');
+  if (cached) {
+    menuCatalog = JSON.parse(cached);
+    renderCatalog();
+  } else {
+    container.innerHTML = `<div class="text-center text-warning py-5">${errorMsg || 'Mode Offline: Menu belum tersedia di cache'}</div>`;
   }
 }
 
@@ -239,7 +275,7 @@ async function processOrderCheckout() {
 
   const cashPaid = Number(document.getElementById('inputCashPaid').value) || totalAmount;
   if (payMethod === 'Tunai' && cashPaid < totalAmount) {
-    return alert('Uang yang diterima kurang!');
+    return alert('Uang yang diterima kurang dari total belanja!');
   }
 
   const btn = document.getElementById('btnSubmitOrder');
@@ -258,31 +294,85 @@ async function processOrderCheckout() {
     items: [...cart]
   };
 
+  // Cadangkan offline jika browser tidak memiliki jaringan
+  if (!navigator.onLine) {
+    saveOrderOffline(payload);
+    finalizeOrderSuccess(cashPaid - totalAmount, true);
+    btn.disabled = false;
+    btn.innerText = 'SELESAIKAN TRANSAKSI';
+    return;
+  }
+
   try {
-    const res = await fetch(GAS_API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action: 'submitOrder', token: currentUser.token, username: currentUser.username, payload })
+    const result = await postToGAS('submitOrder', payload, {
+      token: currentUser.token,
+      username: currentUser.username
     });
-    const result = await res.json();
 
     if (result.status === 'SUCCESS') {
-      alert(`Transaksi Berhasil! (${payMethod})\nID: ${result.orderId}`);
-      cart = [];
-      document.getElementById('orderCust').value = '';
-      document.getElementById('orderTable').value = '';
-      document.getElementById('inputCashPaid').value = '';
-      updateCartUI();
-      navToTab('menu');
+      finalizeOrderSuccess(cashPaid - totalAmount, false, result.orderId);
       loadCatalog();
     } else {
       alert('Gagal: ' + result.message);
     }
   } catch (e) {
-    alert('Terjadi kesalahan jaringan');
+    saveOrderOffline(payload);
+    finalizeOrderSuccess(cashPaid - totalAmount, true);
   } finally {
     btn.disabled = false;
     btn.innerText = 'SELESAIKAN TRANSAKSI';
+  }
+}
+
+function saveOrderOffline(payload) {
+  const queue = JSON.parse(localStorage.getItem('wrr_offline_orders') || '[]');
+  queue.push({
+    offlineId: 'OFF-' + Date.now(),
+    payload: payload,
+    token: currentUser.token,
+    username: currentUser.username
+  });
+  localStorage.setItem('wrr_offline_orders', JSON.stringify(queue));
+}
+
+function finalizeOrderSuccess(kembalian, isOffline, orderId) {
+  const notif = isOffline
+    ? `[MODE OFFLINE]\nTransaksi disimpan di memori HP.\nKembalian: Rp ${kembalian.toLocaleString('id-ID')}\n(Akan disinkronkan otomatis saat online)`
+    : `Transaksi Berhasil!\nID: ${orderId}\nKembalian: Rp ${kembalian.toLocaleString('id-ID')}`;
+
+  alert(notif);
+  cart = [];
+  document.getElementById('orderCust').value = '';
+  document.getElementById('orderTable').value = '';
+  document.getElementById('inputCashPaid').value = '';
+  updateCartUI();
+  navToTab('menu');
+}
+
+async function syncOfflineOrders() {
+  const queue = JSON.parse(localStorage.getItem('wrr_offline_orders') || '[]');
+  if (!queue.length) return;
+
+  const remaining = [];
+  for (const item of queue) {
+    try {
+      const result = await postToGAS('submitOrder', item.payload, {
+        token: item.token,
+        username: item.username
+      });
+      if (result.status !== 'SUCCESS') {
+        remaining.push(item);
+      }
+    } catch (err) {
+      remaining.push(item);
+    }
+  }
+
+  localStorage.setItem('wrr_offline_orders', JSON.stringify(remaining));
+  if (remaining.length === 0) {
+    alert('Semua transaksi offline berhasil disinkronkan!');
+    loadCatalog();
+    loadShiftHistory();
   }
 }
 
@@ -314,7 +404,7 @@ async function loadShiftHistory() {
       `).join('');
     }
   } catch (e) {
-    container.innerHTML = `<div class="text-center text-danger py-4 small">Gagal memuat log</div>`;
+    container.innerHTML = `<div class="text-center text-danger py-4 small">Gagal memuat log penjualan</div>`;
   }
 }
 
@@ -326,7 +416,7 @@ async function loadKasbonData() {
 
     if (result.status === 'SUCCESS') {
       if (!result.data.length) {
-        container.innerHTML = `<div class="text-center text-secondary py-5 small">Tidak ada kasbon aktif</div>`;
+        container.innerHTML = `<div class="text-center text-secondary py-5 small">Tidak ada tagihan kasbon aktif</div>`;
         return;
       }
 
@@ -365,17 +455,15 @@ async function submitPayKasbon() {
   if (nominal <= 0) return alert('Nominal pembayaran tidak valid');
 
   try {
-    const res = await fetch(GAS_API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({
-        action: 'payKasbon',
-        token: currentUser.token,
-        username: currentUser.username,
-        payload: { idKasbon, bayarNominal: nominal, metodeBayar: method }
-      })
+    const result = await postToGAS('payKasbon', {
+      idKasbon: idKasbon,
+      bayarNominal: nominal,
+      metodeBayar: method
+    }, {
+      token: currentUser.token,
+      username: currentUser.username
     });
-    const result = await res.json();
+
     if (result.status === 'SUCCESS') {
       alert(result.message);
       bootstrap.Modal.getInstance(document.getElementById('payKasbonModal')).hide();
@@ -384,6 +472,6 @@ async function submitPayKasbon() {
       alert('Gagal: ' + result.message);
     }
   } catch (e) {
-    alert('Koneksi gagal');
+    alert('Koneksi gagal saat melunasi kasbon');
   }
 }
