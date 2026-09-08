@@ -1,286 +1,429 @@
-// URL Web App dari Google Apps Script
 const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbyuw-W4MAjdVw05Heu1gwp3FPKk7fOOQ4QBmbHGpsFXFxfuqsz8NlthulaqPwAWZ7fWJw/exec';
 
-let menuList = [];
+let currentUser = null;
+let menuCatalog = [];
 let cart = [];
 let currentCategory = 'Semua';
-let isOwnerMode = false;
-let savedOwnerPin = '';
+let activePendingItem = null;
 
 window.addEventListener('DOMContentLoaded', () => {
-  loadMenu();
-  loadHistory();
-  const dateEl = document.getElementById('reportDate');
+  restoreSession();
+  const dateEl = document.getElementById('reportDatePicker');
   if (dateEl) dateEl.value = new Date().toISOString().split('T')[0];
 });
 
-function switchView(viewName) {
-  ['menu', 'cart', 'history', 'owner'].forEach(v => {
-    const el = document.getElementById(`view${v.charAt(0).toUpperCase() + v.slice(1)}`);
-    const btn = document.getElementById(`tab-${v}-btn`);
-    if (el) el.style.display = (v === viewName) ? 'block' : 'none';
-    if (btn) btn.classList.toggle('active', v === viewName);
-  });
-
-  if (viewName === 'history') loadHistory();
-  if (viewName === 'owner') loadReport();
-}
-
-async function loadMenu() {
-  const container = document.getElementById('menuContainer');
-  try {
-    const res = await fetch(`${GAS_API_URL}?action=getMenu`);
-    const result = await res.json();
-    if (result.status === 'SUCCESS') {
-      menuList = result.data;
-      renderMenu();
-    } else {
-      container.innerHTML = `<div class="col-12 text-center text-danger py-4">${result.message}</div>`;
-    }
-  } catch (err) {
-    container.innerHTML = `<div class="col-12 text-center text-danger py-4">Gagal terhubung ke backend. Pastikan Web App Apps Script sudah diberi akses 'Anyone'.</div>`;
-  }
-}
-
-function renderMenu() {
-  const container = document.getElementById('menuContainer');
-  const searchEl = document.getElementById('searchBox');
-  const term = searchEl ? searchEl.value.toLowerCase() : '';
-
-  const filtered = menuList.filter(item => {
-    const matchCat = (currentCategory === 'Semua') || (item.kategori === currentCategory);
-    const matchTerm = item.nama.toLowerCase().includes(term) || (item.varian && item.varian.toLowerCase().includes(term));
-    return matchCat && matchTerm;
-  });
-
-  if (!filtered.length) {
-    container.innerHTML = `<div class="col-12 text-center text-muted py-4">Menu tidak ditemukan</div>`;
-    return;
-  }
-
-  container.innerHTML = filtered.map(item => `
-    <div class="col-6 col-md-4 col-lg-3">
-      <div class="card card-menu h-100 p-2 shadow-sm" onclick="addToCart('${item.id}')">
-        <div class="d-flex justify-content-between align-items-center mb-1">
-          <span class="badge bg-secondary badge-varian">${item.varian || '-'}</span>
-          <small class="text-muted">Stok: ${item.stok}</small>
-        </div>
-        <h6 class="fw-bold mb-1 text-truncate" style="font-size: 0.95rem;">${item.nama}</h6>
-        <div class="text-primary fw-bold small">Rp ${Number(item.harga).toLocaleString('id-ID')}</div>
-      </div>
-    </div>
-  `).join('');
-}
-
-function filterCategory(cat) {
-  currentCategory = cat;
-  document.querySelectorAll('.category-btn').forEach(btn => {
-    btn.classList.toggle('btn-dark', btn.innerText.includes(cat));
-    btn.classList.toggle('btn-outline-secondary', !btn.innerText.includes(cat));
-  });
-  renderMenu();
-}
-
-function filterMenu() {
-  renderMenu();
-}
-
-function addToCart(id) {
-  const item = menuList.find(m => m.id === id);
-  if (!item) return;
-
-  const exists = cart.find(c => c.id === id);
-  if (exists) {
-    exists.qty++;
-    exists.subtotal = exists.qty * exists.harga;
+function restoreSession() {
+  const saved = localStorage.getItem('wrr_session');
+  if (saved) {
+    currentUser = JSON.parse(saved);
+    enterApplication();
   } else {
-    cart.push({ ...item, qty: 1, subtotal: item.harga, notes: '' });
-  }
-  updateCartUI();
-}
-
-function updateCartUI() {
-  const container = document.getElementById('cartList');
-  const totalEl = document.getElementById('grandTotal');
-  const badge = document.getElementById('cartCountBadge');
-  const bar = document.getElementById('mobileCartBar');
-  const barTotal = document.getElementById('mobileBarTotal');
-  const barQty = document.getElementById('mobileBarQty');
-
-  const totalQty = cart.reduce((acc, c) => acc + c.qty, 0);
-  const totalBayar = cart.reduce((acc, c) => acc + c.subtotal, 0);
-
-  if (badge) badge.innerText = totalQty;
-  if (barQty) barQty.innerText = totalQty;
-  if (totalEl) totalEl.innerText = 'Rp ' + totalBayar.toLocaleString('id-ID');
-  if (barTotal) barTotal.innerText = 'Rp ' + totalBayar.toLocaleString('id-ID');
-
-  if (bar) bar.style.display = totalQty > 0 ? 'block' : 'none';
-
-  if (!cart.length) {
-    if (container) container.innerHTML = `<div class="text-center text-muted py-4 small">Keranjang masih kosong</div>`;
-    return;
-  }
-
-  if (container) {
-    container.innerHTML = cart.map((c, i) => `
-      <div class="d-flex justify-content-between align-items-center py-2 border-bottom small">
-        <div>
-          <div class="fw-bold">${c.nama} (${c.varian || '-'})</div>
-          <div class="text-muted">${c.qty}x @ Rp ${Number(c.harga).toLocaleString('id-ID')}</div>
-        </div>
-        <div class="d-flex align-items-center gap-2">
-          <span class="fw-semibold">Rp ${Number(c.subtotal).toLocaleString('id-ID')}</span>
-          <button class="btn btn-sm btn-outline-danger py-0 px-2" onclick="removeItem(${i})">&minus;</button>
-        </div>
-      </div>
-    `).join('');
+    showLoginScreen();
   }
 }
 
-function removeItem(idx) {
-  if (cart[idx].qty > 1) {
-    cart[idx].qty--;
-    cart[idx].subtotal = cart[idx].qty * cart[idx].harga;
-  } else {
-    cart.splice(idx, 1);
-  }
-  updateCartUI();
-}
-
-async function processCheckout() {
-  if (!cart.length) return alert('Keranjang masih kosong!');
-  const btn = document.getElementById('btnCheckout');
+async function handleAuthLogin(e) {
+  e.preventDefault();
+  const btn = document.getElementById('btnLoginSubmit');
   btn.disabled = true;
-  btn.innerText = 'Memproses...';
+  btn.innerText = 'Memverifikasi...';
 
-  const shiftRadio = document.querySelector('input[name="shiftOpt"]:checked');
   const payload = {
-    shift: shiftRadio ? shiftRadio.value : 'Pagi',
-    isOvertime: document.getElementById('checkLembur').checked,
-    customerName: document.getElementById('custName').value.trim() || 'Walk-in',
-    tableNumber: document.getElementById('tableNo').value.trim() || '-',
-    paymentMethod: document.getElementById('payMethod').value,
-    totalAmount: cart.reduce((acc, c) => acc + c.subtotal, 0),
-    items: cart,
-    cashier: isOwnerMode ? 'Owner' : 'Kasir'
+    username: document.getElementById('loginUsername').value.trim(),
+    password: document.getElementById('loginPassword').value.trim(),
+    shift: document.getElementById('loginShift').value
   };
 
   try {
     const res = await fetch(GAS_API_URL, {
       method: 'POST',
-      body: JSON.stringify({ action: 'submitOrder', payload })
+      body: JSON.stringify({ action: 'login', payload })
     });
     const result = await res.json();
+
     if (result.status === 'SUCCESS') {
-      alert(`Pesanan Sukses! ID: ${result.orderId}`);
-      cart = [];
-      document.getElementById('custName').value = '';
-      document.getElementById('tableNo').value = '';
-      updateCartUI();
-      switchView('menu');
-      loadMenu();
+      currentUser = result.user;
+      localStorage.setItem('wrr_session', JSON.stringify(currentUser));
+      enterApplication();
     } else {
-      alert('Gagal: ' + result.message);
+      alert(result.message);
     }
   } catch (err) {
-    alert('Koneksi bermasalah: ' + err.message);
+    alert('Koneksi backend terputus: ' + err.message);
   } finally {
     btn.disabled = false;
-    btn.innerText = 'Selesaikan Pesanan';
+    btn.innerText = 'Masuk ke Kasir';
   }
 }
 
-async function loadHistory() {
-  const container = document.getElementById('historyList');
-  if (!container) return;
+async function handleAuthLogout() {
+  if (!confirm('Apakah Anda yakin ingin mengakhiri shift & keluar?')) return;
   try {
-    const res = await fetch(`${GAS_API_URL}?action=getHistory&limit=25`);
+    await fetch(GAS_API_URL, {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'logout',
+        payload: { username: currentUser.username }
+      })
+    });
+  } catch (e) {}
+
+  localStorage.removeItem('wrr_session');
+  currentUser = null;
+  cart = [];
+  location.reload();
+}
+
+function enterApplication() {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('mainApp').style.display = 'block';
+
+  document.getElementById('headerUserLabel').innerText = 
+    `${currentUser.nama} (${currentUser.role} - ${currentUser.shift})`;
+
+  // Hak Akses Khusus Owner
+  if (currentUser.role === 'Owner') {
+    document.getElementById('dockOwner').style.display = 'flex';
+  } else {
+    document.getElementById('dockOwner').style.display = 'none';
+  }
+
+  loadCatalog();
+  loadShiftHistory();
+}
+
+function showLoginScreen() {
+  document.getElementById('loginScreen').style.display = 'flex';
+  document.getElementById('mainApp').style.display = 'none';
+}
+
+function navToTab(tabName) {
+  document.querySelectorAll('.tab-view').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.dock-btn').forEach(btn => btn.classList.remove('active'));
+
+  const view = document.getElementById(`view${tabName.charAt(0).toUpperCase() + tabName.slice(1)}`);
+  const dock = document.getElementById(`dock${tabName.charAt(0).toUpperCase() + tabName.slice(1)}`);
+
+  if (view) view.classList.add('active');
+  if (dock) dock.classList.add('active');
+
+  if (tabName === 'history') loadShiftHistory();
+  if (tabName === 'owner') fetchOwnerReport();
+}
+
+async function loadCatalog() {
+  const container = document.getElementById('catalogGrid');
+  try {
+    const res = await fetch(`${GAS_API_URL}?action=getMenu`);
     const result = await res.json();
     if (result.status === 'SUCCESS') {
+      menuCatalog = result.data;
+      renderCatalog();
+    }
+  } catch (e) {
+    container.innerHTML = `<div class="text-center text-danger py-5">Gagal sinkronisasi menu</div>`;
+  }
+}
+
+function renderCatalog() {
+  const container = document.getElementById('catalogGrid');
+  const term = document.getElementById('searchMenu').value.toLowerCase();
+
+  const filtered = menuCatalog.filter(item => {
+    const matchCat = (currentCategory === 'Semua') || (item.kategori === currentCategory);
+    const matchTerm = item.nama.toLowerCase().includes(term) || item.varian.toLowerCase().includes(term);
+    return matchCat && matchTerm;
+  });
+
+  if (!filtered.length) {
+    container.innerHTML = `<div class="text-center text-secondary py-5">Menu tidak ditemukan</div>`;
+    return;
+  }
+
+  container.innerHTML = filtered.map(m => `
+    <div class="col-6 col-md-4 col-lg-3">
+      <div class="menu-card h-100" onclick="openItemCustomModal('${m.id}')">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <span class="menu-badge">${m.varian}</span>
+          <small class="text-secondary" style="font-size:0.7rem;">Stok: ${m.stok}</small>
+        </div>
+        <h6 class="fw-bold text-white mb-1 text-truncate" style="font-size: 0.95rem;">${m.nama}</h6>
+        <div class="text-accent fw-bold small">Rp ${Number(m.harga).toLocaleString('id-ID')}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function setCategory(cat, btn) {
+  currentCategory = cat;
+  document.querySelectorAll('.cat-pill').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  renderCatalog();
+}
+
+function openItemCustomModal(id) {
+  const item = menuCatalog.find(m => m.id === id);
+  if (!item) return;
+  activePendingItem = item;
+
+  document.getElementById('customItemId').value = item.id;
+  document.getElementById('customItemTitle').innerText = `${item.nama} (${item.varian})`;
+  document.getElementById('customItemNote').value = '';
+
+  const modal = new bootstrap.Modal(document.getElementById('itemCustomModal'));
+  modal.show();
+}
+
+function appendNote(txt) {
+  const noteEl = document.getElementById('customItemNote');
+  noteEl.value = noteEl.value ? `${noteEl.value}, ${txt}` : txt;
+}
+
+function confirmAddToCartWithNote() {
+  if (!activePendingItem) return;
+  const note = document.getElementById('customItemNote').value.trim();
+
+  const existing = cart.find(c => c.id === activePendingItem.id && c.catatan === note);
+  if (existing) {
+    existing.qty++;
+    existing.subtotal = existing.qty * existing.harga;
+  } else {
+    cart.push({
+      ...activePendingItem,
+      qty: 1,
+      subtotal: activePendingItem.harga,
+      catatan: note
+    });
+  }
+
+  bootstrap.Modal.getInstance(document.getElementById('itemCustomModal')).hide();
+  updateCartUI();
+}
+
+function updateCartUI() {
+  const list = document.getElementById('cartItemsList');
+  const grandTotalEl = document.getElementById('cartGrandTotal');
+  const floatBar = document.getElementById('floatingCartBar');
+  const floatCount = document.getElementById('floatingCartCount');
+  const floatTotal = document.getElementById('floatingCartTotal');
+
+  const totalQty = cart.reduce((acc, c) => acc + c.qty, 0);
+  const totalAmount = cart.reduce((acc, c) => acc + c.subtotal, 0);
+
+  grandTotalEl.innerText = 'Rp ' + totalAmount.toLocaleString('id-ID');
+  floatCount.innerText = totalQty;
+  floatTotal.innerText = 'Rp ' + totalAmount.toLocaleString('id-ID');
+
+  floatBar.style.display = totalQty > 0 ? 'block' : 'none';
+
+  if (!cart.length) {
+    list.innerHTML = `<div class="text-center text-secondary py-4 small">Belum ada menu dipilih</div>`;
+    calcChange();
+    return;
+  }
+
+  list.innerHTML = cart.map((c, i) => `
+    <div class="d-flex justify-content-between align-items-center py-2 border-bottom border-dark small">
+      <div>
+        <div class="fw-bold text-white">${c.nama} (${c.varian})</div>
+        <div class="text-secondary">${c.qty}x @ Rp ${Number(c.harga).toLocaleString('id-ID')}</div>
+        ${c.catatan ? `<span class="badge bg-dark border border-secondary text-warning" style="font-size:0.65rem;">${c.catatan}</span>` : ''}
+      </div>
+      <div class="d-flex align-items-center gap-2">
+        <span class="fw-bold text-accent">Rp ${Number(c.subtotal).toLocaleString('id-ID')}</span>
+        <button class="btn btn-sm btn-outline-danger py-0 px-2" onclick="modifyCartQty(${i}, -1)">&minus;</button>
+        <button class="btn btn-sm btn-outline-success py-0 px-2" onclick="modifyCartQty(${i}, 1)">+</button>
+      </div>
+    </div>
+  `).join('');
+
+  calcChange();
+}
+
+function modifyCartQty(index, delta) {
+  cart[index].qty += delta;
+  if (cart[index].qty <= 0) {
+    cart.splice(index, 1);
+  } else {
+    cart[index].subtotal = cart[index].qty * cart[index].harga;
+  }
+  updateCartUI();
+}
+
+function clearCart() {
+  if (confirm('Kosongkan semua pesanan di keranjang?')) {
+    cart = [];
+    updateCartUI();
+  }
+}
+
+function togglePayMethod() {
+  const method = document.querySelector('input[name="payType"]:checked').value;
+  const cashArea = document.getElementById('cashCalcArea');
+  cashArea.style.display = (method === 'Tunai') ? 'block' : 'none';
+}
+
+function setQuickCash(val) {
+  const totalAmount = cart.reduce((acc, c) => acc + c.subtotal, 0);
+  const input = document.getElementById('inputCashPaid');
+  if (val === 'exact') {
+    input.value = totalAmount;
+  } else {
+    input.value = val;
+  }
+  calcChange();
+}
+
+function calcChange() {
+  const totalAmount = cart.reduce((acc, c) => acc + c.subtotal, 0);
+  const paid = Number(document.getElementById('inputCashPaid').value) || 0;
+  const change = Math.max(0, paid - totalAmount);
+  document.getElementById('labelChangeAmount').innerText = 'Rp ' + change.toLocaleString('id-ID');
+}
+
+async function processOrderCheckout() {
+  if (!cart.length) return alert('Pilih menu terlebih dahulu!');
+  const totalAmount = cart.reduce((acc, c) => acc + c.subtotal, 0);
+  const payMethod = document.querySelector('input[name="payType"]:checked').value;
+  const cashPaid = Number(document.getElementById('inputCashPaid').value) || totalAmount;
+
+  if (payMethod === 'Tunai' && cashPaid < totalAmount) {
+    return alert('Uang diterima kurang dari total transaksi!');
+  }
+
+  const btn = document.getElementById('btnSubmitOrder');
+  btn.disabled = true;
+  btn.innerText = 'Memproses Transaksi...';
+
+  const payload = {
+    shift: currentUser.shift,
+    isLembur: document.getElementById('checkLembur').checked,
+    customerName: document.getElementById('orderCust').value.trim() || 'Walk-in',
+    tableNumber: document.getElementById('orderTable').value.trim() || '-',
+    totalAmount: totalAmount,
+    nominalDiterima: cashPaid,
+    kembalian: Math.max(0, cashPaid - totalAmount),
+    paymentMethod: payMethod,
+    items: cart
+  };
+
+  try {
+    const res = await fetch(GAS_API_URL, {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'submitOrder',
+        token: currentUser.token,
+        username: currentUser.username,
+        payload
+      })
+    });
+    const result = await res.json();
+
+    if (result.status === 'SUCCESS') {
+      alert(`Transaksi Berhasil Dicatat!\nNo. Transaksi: ${result.orderId}\nKembalian: Rp ${(cashPaid - totalAmount).toLocaleString('id-ID')}`);
+      cart = [];
+      document.getElementById('orderCust').value = '';
+      document.getElementById('orderTable').value = '';
+      document.getElementById('inputCashPaid').value = '';
+      updateCartUI();
+      navToTab('menu');
+      loadCatalog();
+    } else {
+      alert('Gagal: ' + result.message);
+    }
+  } catch (e) {
+    alert('Koneksi terputus: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerText = 'SELESAIKAN TRANSAKSI';
+  }
+}
+
+async function loadShiftHistory() {
+  const container = document.getElementById('historyOrdersList');
+  try {
+    const res = await fetch(`${GAS_API_URL}?action=getHistory&token=${currentUser.token}&username=${currentUser.username}&shift=${currentUser.shift}`);
+    const result = await res.json();
+
+    if (result.status === 'SUCCESS') {
       if (!result.data.length) {
-        container.innerHTML = `<div class="text-center py-4 text-muted small">Belum ada transaksi hari ini</div>`;
+        container.innerHTML = `<div class="text-center text-secondary py-5 small">Belum ada transaksi di shift ini</div>`;
         return;
       }
+
       container.innerHTML = result.data.map(o => `
-        <div class="list-group-item d-flex justify-content-between align-items-center py-2 small">
-          <div>
-            <span class="fw-bold">${o.id}</span> <span class="badge bg-light text-dark">${o.jam}</span>
-            <div class="text-muted">Meja: ${o.meja} | ${o.pelanggan} (${o.shift}${o.lembur ? ' + Lembur' : ''})</div>
+        <div class="card bg-dark-card border-0 p-3 mb-2">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <span class="fw-bold text-white small">${o.id}</span>
+            <span class="badge ${o.status === 'Void' ? 'bg-danger' : 'bg-success'}">${o.status}</span>
           </div>
-          <div class="text-end">
-            <div class="fw-bold text-success">Rp ${Number(o.total).toLocaleString('id-ID')}</div>
-            <span class="badge bg-secondary">${o.metode}</span>
+          <div class="d-flex justify-content-between align-items-center text-secondary small">
+            <span>Meja: ${o.meja} | ${o.pelanggan} (${o.jam})</span>
+            <span class="fw-bold text-accent">Rp ${Number(o.total).toLocaleString('id-ID')}</span>
           </div>
+          ${(currentUser.role === 'Owner' && o.status !== 'Void') ? `
+            <div class="text-end mt-2">
+              <button class="btn btn-sm btn-outline-danger py-0 px-2" onclick="voidOrderPrompt('${o.id}')">Batalkan (Void)</button>
+            </div>
+          ` : ''}
         </div>
       `).join('');
     }
   } catch (e) {
-    container.innerHTML = `<div class="text-center py-4 text-danger small">Gagal memuat riwayat</div>`;
+    container.innerHTML = `<div class="text-center text-danger py-4 small">Gagal memuat riwayat</div>`;
   }
 }
 
-function toggleRoleModal() {
-  const modal = new bootstrap.Modal(document.getElementById('pinModal'));
-  modal.show();
-}
+async function voidOrderPrompt(orderId) {
+  const reason = prompt(`Masukkan alasan pembatalan pesanan ${orderId}:`);
+  if (!reason) return;
 
-async function submitOwnerPin() {
-  const pin = document.getElementById('inputPin').value;
   try {
     const res = await fetch(GAS_API_URL, {
       method: 'POST',
-      body: JSON.stringify({ action: 'verifyPin', pin })
+      body: JSON.stringify({
+        action: 'voidOrder',
+        token: currentUser.token,
+        username: currentUser.username,
+        payload: { orderId, reason }
+      })
     });
     const result = await res.json();
     if (result.status === 'SUCCESS') {
-      isOwnerMode = true;
-      savedOwnerPin = pin;
-      document.getElementById('badgeRole').innerText = 'Owner';
-      document.getElementById('badgeRole').className = 'badge bg-success';
-      document.getElementById('ownerTabNav').style.display = 'block';
-      bootstrap.Modal.getInstance(document.getElementById('pinModal')).hide();
-      document.getElementById('inputPin').value = '';
-      switchView('owner');
+      alert(result.message);
+      loadShiftHistory();
+      loadCatalog();
     } else {
-      alert('PIN Salah!');
+      alert('Gagal: ' + result.message);
     }
   } catch (e) {
-    alert('Verifikasi PIN gagal');
+    alert('Koneksi gagal');
   }
 }
 
-function switchRoleToKasir() {
-  isOwnerMode = false;
-  savedOwnerPin = '';
-  document.getElementById('badgeRole').innerText = 'Kasir';
-  document.getElementById('badgeRole').className = 'badge bg-secondary';
-  document.getElementById('ownerTabNav').style.display = 'none';
-  bootstrap.Modal.getInstance(document.getElementById('pinModal')).hide();
-  switchView('menu');
-}
+async function fetchOwnerReport() {
+  if (currentUser.role !== 'Owner') return;
+  const date = document.getElementById('reportDatePicker').value;
 
-async function loadReport() {
-  if (!isOwnerMode) return;
-  const date = document.getElementById('reportDate').value;
   try {
-    const res = await fetch(`${GAS_API_URL}?action=getReport&date=${date}&pin=${savedOwnerPin}`);
-    const data = await res.json();
-    if (data.status === 'SUCCESS') {
-      const r = data.ringkasan;
-      document.getElementById('valOmset').innerText = 'Rp ' + Number(r.omset).toLocaleString('id-ID');
-      document.getElementById('valHpp').innerText = 'Rp ' + Number(r.hpp).toLocaleString('id-ID');
-      document.getElementById('valOps').innerText = 'Rp ' + Number(r.pengeluaran).toLocaleString('id-ID');
-      document.getElementById('valNet').innerText = 'Rp ' + Number(r.labaBersih).toLocaleString('id-ID');
-      document.getElementById('shiftOmsetPagi').innerText = 'Rp ' + Number(data.shiftOmset.Pagi || 0).toLocaleString('id-ID');
-      document.getElementById('shiftOmsetMalam').innerText = 'Rp ' + Number(data.shiftOmset.Malam || 0).toLocaleString('id-ID');
+    const res = await fetch(`${GAS_API_URL}?action=getReport&date=${date}&token=${currentUser.token}&username=${currentUser.username}`);
+    const result = await res.json();
+
+    if (result.status === 'SUCCESS') {
+      const s = result.summary;
+      document.getElementById('statOmset').innerText = 'Rp ' + Number(s.omset).toLocaleString('id-ID');
+      document.getElementById('statHpp').innerText = 'Rp ' + Number(s.hpp).toLocaleString('id-ID');
+      document.getElementById('statOps').innerText = 'Rp ' + Number(s.operasional).toLocaleString('id-ID');
+      document.getElementById('statNet').innerText = 'Rp ' + Number(s.labaBersih).toLocaleString('id-ID');
+      document.getElementById('statShiftPagi').innerText = 'Rp ' + Number(result.shiftOmset.Pagi || 0).toLocaleString('id-ID');
+      document.getElementById('statShiftMalam').innerText = 'Rp ' + Number(result.shiftOmset.Malam || 0).toLocaleString('id-ID');
     }
   } catch (e) {
-    alert('Gagal mengambil laporan finansial');
+    alert('Gagal mengambil data laporan finansial');
   }
 }
 
-async function submitExpense(e) {
+async function submitExpenseForm(e) {
   e.preventDefault();
   const btn = document.getElementById('btnSaveExpense');
   btn.disabled = true;
@@ -288,29 +431,32 @@ async function submitExpense(e) {
   const payload = {
     kategori: document.getElementById('expCategory').value,
     nominal: document.getElementById('expAmount').value,
-    deskripsi: document.getElementById('expDescription').value.trim(),
-    pic: document.getElementById('expPic').value.trim()
+    deskripsi: document.getElementById('expDesc').value.trim(),
+    shift: currentUser.shift
   };
 
   try {
     const res = await fetch(GAS_API_URL, {
       method: 'POST',
-      body: JSON.stringify({ action: 'recordExpense', payload })
+      body: JSON.stringify({
+        action: 'recordExpense',
+        token: currentUser.token,
+        username: currentUser.username,
+        payload
+      })
     });
     const result = await res.json();
+
     if (result.status === 'SUCCESS') {
       bootstrap.Modal.getInstance(document.getElementById('expenseModal')).hide();
-      document.getElementById('expenseForm').reset();
+      document.getElementById('expAmount').value = '';
+      document.getElementById('expDesc').value = '';
       alert('Pengeluaran berhasil dicatat!');
-      if (isOwnerMode) loadReport();
+      if (currentUser.role === 'Owner') fetchOwnerReport();
     }
   } catch (e) {
     alert('Gagal mencatat beban');
   } finally {
     btn.disabled = false;
   }
-}
-
-function updateShiftUI() {
-  // Hook untuk penyesuaian event shift jika diperlukan
 }
