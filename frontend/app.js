@@ -1,4 +1,4 @@
-// URL Baru Deployment Google Apps Script
+// URL Baru Deployment Google Apps Script (Tanpa Spasi)
 const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbzQ3G0VdXVfCgd0RczLTGOaZNErFIR0Lq1vt0ISAmTEcjc8pC7REgg5cBzH5DPffTvdGA/exec';
 
 let currentUser = null;
@@ -17,7 +17,6 @@ if ('serviceWorker' in navigator) {
 window.addEventListener('online', () => syncOfflineOrders());
 window.addEventListener('DOMContentLoaded', () => restoreSession());
 
-// Helper Tanggal Default (Format YYYY-MM-DD)
 function getTodayIsoString() {
   const d = new Date();
   const yyyy = d.getFullYear();
@@ -31,6 +30,13 @@ async function postToGAS(action, payload = {}, extraParams = {}) {
   const bodyData = new URLSearchParams();
   bodyData.append('action', action);
   bodyData.append('payload', JSON.stringify(payload));
+
+  // Mengirim kredensial login ganda (sebagai payload JSON dan parameter form langsung)
+  if (action === 'login' && payload) {
+    if (payload.username) bodyData.append('username', payload.username);
+    if (payload.password) bodyData.append('password', payload.password);
+    if (payload.shift) bodyData.append('shift', payload.shift);
+  }
 
   if (extraParams.token) bodyData.append('token', extraParams.token);
   if (extraParams.username) bodyData.append('username', extraParams.username);
@@ -105,7 +111,6 @@ function enterApplication() {
   const floatBar = document.getElementById('floatingCartBar');
 
   if (currentUser.role === 'Owner') {
-    // Mode Khusus Owner
     if (dockDashboard) dockDashboard.classList.remove('d-none');
     if (dockAnalytics) dockAnalytics.classList.remove('d-none');
     if (dockReport) dockReport.classList.remove('d-none');
@@ -114,13 +119,11 @@ function enterApplication() {
     if (wrapLembur) wrapLembur.classList.add('d-none');
     if (floatBar) floatBar.style.display = 'none';
 
-    // Inisialisasi default tanggal laporan audit
     const dateInput = document.getElementById('reportFilterDate');
     if (dateInput && !dateInput.value) {
       dateInput.value = getTodayIsoString();
     }
 
-    // Default ke Live Monitor
     navToTab('dashboard');
 
     if (liveMonitorInterval) clearInterval(liveMonitorInterval);
@@ -129,7 +132,6 @@ function enterApplication() {
     }, 30000);
 
   } else {
-    // Mode Khusus Kasir
     if (dockDashboard) dockDashboard.classList.add('d-none');
     if (dockAnalytics) dockAnalytics.classList.add('d-none');
     if (dockReport) dockReport.classList.add('d-none');
