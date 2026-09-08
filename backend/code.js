@@ -1,7 +1,7 @@
 const OWNER_PIN = "8899"; // Ganti dengan 4 digit PIN rahasia Owner Anda
 
 function getDb() {
-  return SpreadsheetApp.getActiveSpreadsheet();
+  return SpreadsheetApp.openById("1XAN8fOZjhIp1UphUfgFmbX1Us2OcILMSb0-xMgiEFJ4");
 }
 
 function doPost(e) {
