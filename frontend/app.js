@@ -1,4 +1,4 @@
-// Pastikan URL deployment utuh tanpa ada celah spasi
+// Endpoint URL Baru Google Apps Script (Tanpa Spasi)
 const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbzQ3G0VdXVfCgd0RczLTGOaZNErFIR0Lq1vt0ISAmTEcjc8pC7REgg5cBzH5DPffTvdGA/exec';
 
 let currentUser = null;
@@ -7,7 +7,7 @@ let cart = [];
 let currentCategory = 'Semua';
 let liveMonitorInterval = null;
 
-// PWA Service Worker
+// Registrasi Service Worker PWA
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js').catch(err => console.log('SW Info:', err));
@@ -17,7 +17,7 @@ if ('serviceWorker' in navigator) {
 window.addEventListener('online', () => syncOfflineOrders());
 window.addEventListener('DOMContentLoaded', () => restoreSession());
 
-// Universal Helper POST anti-CORS
+// Universal Helper POST anti-CORS via URLSearchParams
 async function postToGAS(action, payload = {}, extraParams = {}) {
   const bodyData = new URLSearchParams();
   bodyData.append('action', action);
@@ -88,6 +88,7 @@ function enterApplication() {
   document.getElementById('headerUserLabel').innerText = `${currentUser.cabang} | ${currentUser.nama} (${currentUser.shift})`;
 
   const dockDashboard = document.getElementById('dockDashboard');
+  const dockAnalytics = document.getElementById('dockAnalytics');
   const dockReport = document.getElementById('dockReport');
   const dockMenu = document.getElementById('dockMenu');
   const dockCart = document.getElementById('dockCart');
@@ -95,26 +96,27 @@ function enterApplication() {
   const floatBar = document.getElementById('floatingCartBar');
 
   if (currentUser.role === 'Owner') {
-    // Tampilan Khusus OWNER: Prioritaskan Monitoring & Laporan
+    // Mode Khusus Owner: Tampilkan Monitoring, Analisa & Audit
     if (dockDashboard) dockDashboard.classList.remove('d-none');
+    if (dockAnalytics) dockAnalytics.classList.remove('d-none');
     if (dockReport) dockReport.classList.remove('d-none');
     if (dockMenu) dockMenu.classList.add('d-none');
     if (dockCart) dockCart.classList.add('d-none');
     if (wrapLembur) wrapLembur.classList.add('d-none');
     if (floatBar) floatBar.style.display = 'none';
 
-    // Langsung buka Dashboard Monitoring Live sebagai halaman utama
+    // Langsung buka Dashboard Monitoring Live
     navToTab('dashboard');
 
-    // Aktifkan Live Polling otomatis setiap 30 detik
     if (liveMonitorInterval) clearInterval(liveMonitorInterval);
     liveMonitorInterval = setInterval(() => {
       loadLiveMonitorData(false);
     }, 30000);
 
   } else {
-    // Tampilan Khusus KASIR: Prioritaskan Menu & Kasir
+    // Mode Khusus Kasir: Tampilkan Menu & Kasir
     if (dockDashboard) dockDashboard.classList.add('d-none');
+    if (dockAnalytics) dockAnalytics.classList.add('d-none');
     if (dockReport) dockReport.classList.add('d-none');
     if (dockMenu) dockMenu.classList.remove('d-none');
     if (dockCart) dockCart.classList.remove('d-none');
@@ -143,12 +145,13 @@ function navToTab(tabName) {
   if (dock) dock.classList.add('active');
 
   if (tabName === 'dashboard') loadLiveMonitorData(true);
+  if (tabName === 'analytics') loadSalesAnalytics();
   if (tabName === 'history') loadShiftHistory();
   if (tabName === 'kasbon') loadKasbonData();
   if (tabName === 'report') loadOwnerReport();
 }
 
-// FUNGSI MONITORING LIVE OWNER
+// 1. MONITORING LIVE OWNER
 async function loadLiveMonitorData(isManual) {
   if (!currentUser || currentUser.role !== 'Owner') return;
 
@@ -170,7 +173,6 @@ async function loadLiveMonitorData(isManual) {
       document.getElementById('monTotalTrx').innerText = ringkas.jumlahTransaksi + ' Struk';
       document.getElementById('monTotalPiutang').innerText = 'Piutang: Rp ' + Number(ringkas.totalPiutangBelumLunas).toLocaleString('id-ID');
 
-      // Breakdown Per Cabang
       if (resultHist.status === 'SUCCESS') {
         const orders = resultHist.data;
         let cenOmset = 0, cenCount = 0;
@@ -193,7 +195,6 @@ async function loadLiveMonitorData(isManual) {
         document.getElementById('monMapOmset').innerText = 'Rp ' + mapOmset.toLocaleString('id-ID');
         document.getElementById('monMapTrx').innerText = mapCount + ' Transaksi';
 
-        // Render Live Feed Log
         renderLiveMonitorFeed(orders);
       }
     }
@@ -253,7 +254,87 @@ function renderLiveMonitorFeed(orders) {
   }).join('');
 }
 
-// LOGIKA KASIR & KATALOG POS
+// 2. ANALISA PENJUALAN OWNER
+async function loadSalesAnalytics() {
+  if (!currentUser || currentUser.role !== 'Owner') return;
+
+  const periode = document.getElementById('analyticsPeriode').value;
+  const cabang = document.getElementById('analyticsCabang').value;
+  const rangeLabel = document.getElementById('analyticsRangeLabel');
+
+  rangeLabel.innerText = 'Menghitung analisa performa...';
+
+  try {
+    const res = await fetch(`${GAS_API_URL}?action=getSalesAnalytics&token=${currentUser.token}&username=${currentUser.username}&periode=${periode}&cabang=${cabang}`);
+    const result = await res.json();
+
+    if (result.status === 'SUCCESS') {
+      const d = result.data;
+      rangeLabel.innerText = `Rentang: ${d.startDate} - ${d.endDate}`;
+
+      document.getElementById('anaTotalOmset').innerText = 'Rp ' + Number(d.ringkasan.omset).toLocaleString('id-ID');
+      document.getElementById('anaLabaKas').innerText = 'Laba Kas: Rp ' + Number(d.ringkasan.labaKas).toLocaleString('id-ID');
+      document.getElementById('anaAvgBasket').innerText = 'Rp ' + Number(d.ringkasan.avgBasket).toLocaleString('id-ID');
+      document.getElementById('anaTotalTrx').innerText = d.ringkasan.transaksi + ' Transaksi';
+
+      document.getElementById('anaTunai').innerText = 'Rp ' + Number(d.ringkasan.tunai).toLocaleString('id-ID');
+      document.getElementById('anaQris').innerText = 'Rp ' + Number(d.ringkasan.qris).toLocaleString('id-ID');
+      document.getElementById('anaKasbon').innerText = 'Rp ' + Number(d.ringkasan.kasbon).toLocaleString('id-ID');
+      document.getElementById('anaBeban').innerText = 'Rp ' + Number(d.ringkasan.beban).toLocaleString('id-ID');
+
+      // Top 5 Best Seller Items
+      const topContainer = document.getElementById('anaTopItemsList');
+      if (!d.topItems.length) {
+        topContainer.innerHTML = `<div class="text-center text-secondary py-2 small">Belum ada menu terjual</div>`;
+      } else {
+        topContainer.innerHTML = d.topItems.map((item, idx) => `
+          <div class="d-flex justify-content-between align-items-center py-2 border-bottom border-dark small">
+            <div>
+              <span class="badge bg-secondary me-1">#${idx + 1}</span>
+              <span class="text-white fw-semibold">${item.nama}</span>
+            </div>
+            <div class="text-end">
+              <span class="fw-bold text-accent">${item.qty} porsi</span>
+              <small class="text-secondary d-block">Rp ${Number(item.omset).toLocaleString('id-ID')}</small>
+            </div>
+          </div>
+        `).join('');
+      }
+
+      // Visual Bar Tren
+      const trendContainer = document.getElementById('anaTrendBars');
+      const trendKeys = Object.keys(d.trend);
+      document.getElementById('anaTrendTitle').innerText = periode === 'harian' ? 'Jam Paling Ramai (Peak Hours)' : 'Tren Penjualan Harian';
+
+      if (!trendKeys.length) {
+        trendContainer.innerHTML = `<div class="text-center text-secondary py-2 small">Tidak ada transaksi tercatat</div>`;
+      } else {
+        const maxVal = Math.max(...Object.values(d.trend), 1);
+        trendContainer.innerHTML = trendKeys.map(key => {
+          const val = d.trend[key];
+          const percent = Math.round((val / maxVal) * 100);
+          return `
+            <div class="mb-2">
+              <div class="d-flex justify-content-between small mb-1">
+                <span class="text-secondary">${key}</span>
+                <span class="text-white fw-bold">Rp ${Number(val).toLocaleString('id-ID')}</span>
+              </div>
+              <div class="progress" style="height: 6px; background-color: #1F2937;">
+                <div class="progress-bar bg-warning" style="width: ${percent}%"></div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+    } else {
+      alert('Gagal mengambil analisis: ' + result.message);
+    }
+  } catch (err) {
+    rangeLabel.innerText = 'Koneksi backend gagal';
+  }
+}
+
+// 3. LOGIKA POS KASIR
 async function loadCatalog() {
   const container = document.getElementById('catalogGrid');
   try {
