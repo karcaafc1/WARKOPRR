@@ -1,10 +1,24 @@
-const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbzzdd1RzVj3a_oenJrsIDPWR7NT5FP2WqUzXH__K_mss3_XeokPV1HvZIYkmxCr1EDH/exec';
+const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbzzdd1RzVj3a_oenJrsIDPWR7NT5FP2WqUzXH__K_mss3_XeokPV1HvZlYkmxCr1EDH/exec';
 
 let currentUser = null;
 let menuCatalog = [];
 let cart = [];
 let currentCategory = 'Semua';
 let activePendingItem = null;
+
+// Registrasi Service Worker untuk kapabilitas PWA & Offline
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(err => {
+      console.log('SW registration failed:', err);
+    });
+  });
+}
+
+// Otomatis sinkronisasi antrean offline ketika internet kembali online
+window.addEventListener('online', () => {
+  syncOfflineOrders();
+});
 
 window.addEventListener('DOMContentLoaded', () => {
   restoreSession();
@@ -93,6 +107,7 @@ function enterApplication() {
 
   loadCatalog();
   loadShiftHistory();
+  syncOfflineOrders();
 }
 
 function showLoginScreen() {
@@ -121,12 +136,23 @@ async function loadCatalog() {
     const result = await res.json();
     if (result.status === 'SUCCESS') {
       menuCatalog = result.data;
+      localStorage.setItem('wrr_cached_menu', JSON.stringify(menuCatalog));
       renderCatalog();
     } else {
-      container.innerHTML = `<div class="text-center text-danger py-5">${result.message}</div>`;
+      loadFallbackCachedMenu(container, result.message);
     }
   } catch (e) {
-    container.innerHTML = `<div class="text-center text-danger py-5">Gagal sinkronisasi menu</div>`;
+    loadFallbackCachedMenu(container);
+  }
+}
+
+function loadFallbackCachedMenu(container, errorMsg) {
+  const cached = localStorage.getItem('wrr_cached_menu');
+  if (cached) {
+    menuCatalog = JSON.parse(cached);
+    renderCatalog();
+  } else {
+    container.innerHTML = `<div class="text-center text-warning py-5">${errorMsg || 'Mode Offline: Menu lokal belum tersedia'}</div>`;
   }
 }
 
@@ -309,8 +335,17 @@ async function processOrderCheckout() {
     nominalDiterima: cashPaid,
     kembalian: Math.max(0, cashPaid - totalAmount),
     paymentMethod: payMethod,
-    items: cart
+    items: [...cart]
   };
+
+  // Mekanisme simpan offline jika perangkat tidak memiliki koneksi
+  if (!navigator.onLine) {
+    saveOrderOffline(payload);
+    finalizeOrderSuccess(cashPaid - totalAmount, true);
+    btn.disabled = false;
+    btn.innerText = 'SELESAIKAN TRANSAKSI';
+    return;
+  }
 
   try {
     const res = await fetch(GAS_API_URL, {
@@ -326,22 +361,77 @@ async function processOrderCheckout() {
     const result = await res.json();
 
     if (result.status === 'SUCCESS') {
-      alert(`Transaksi Berhasil Dicatat!\nNo. Transaksi: ${result.orderId}\nKembalian: Rp ${(cashPaid - totalAmount).toLocaleString('id-ID')}`);
-      cart = [];
-      document.getElementById('orderCust').value = '';
-      document.getElementById('orderTable').value = '';
-      document.getElementById('inputCashPaid').value = '';
-      updateCartUI();
-      navToTab('menu');
+      finalizeOrderSuccess(cashPaid - totalAmount, false, result.orderId);
       loadCatalog();
     } else {
       alert('Gagal: ' + result.message);
     }
   } catch (e) {
-    alert('Koneksi terputus: ' + e.message);
+    // Fallback otomatis jika transmisi gagal saat sinyal terputus tiba-tiba
+    saveOrderOffline(payload);
+    finalizeOrderSuccess(cashPaid - totalAmount, true);
   } finally {
     btn.disabled = false;
     btn.innerText = 'SELESAIKAN TRANSAKSI';
+  }
+}
+
+function saveOrderOffline(payload) {
+  const queue = JSON.parse(localStorage.getItem('wrr_offline_orders') || '[]');
+  queue.push({
+    offlineId: 'OFF-' + Date.now(),
+    payload: payload,
+    token: currentUser.token,
+    username: currentUser.username
+  });
+  localStorage.setItem('wrr_offline_orders', JSON.stringify(queue));
+}
+
+function finalizeOrderSuccess(kembalian, isOffline, orderId) {
+  const notif = isOffline
+    ? `[MODE OFFLINE]\nTransaksi berhasil disimpan di memori HP.\nKembalian: Rp ${kembalian.toLocaleString('id-ID')}\n(Akan otomatis disinkronkan saat online)`
+    : `Transaksi Berhasil!\nID: ${orderId}\nKembalian: Rp ${kembalian.toLocaleString('id-ID')}`;
+
+  alert(notif);
+  cart = [];
+  document.getElementById('orderCust').value = '';
+  document.getElementById('orderTable').value = '';
+  document.getElementById('inputCashPaid').value = '';
+  updateCartUI();
+  navToTab('menu');
+}
+
+async function syncOfflineOrders() {
+  const queue = JSON.parse(localStorage.getItem('wrr_offline_orders') || '[]');
+  if (!queue.length) return;
+
+  const remaining = [];
+  for (const item of queue) {
+    try {
+      const res = await fetch(GAS_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'submitOrder',
+          token: item.token,
+          username: item.username,
+          payload: item.payload
+        })
+      });
+      const result = await res.json();
+      if (result.status !== 'SUCCESS') {
+        remaining.push(item);
+      }
+    } catch (err) {
+      remaining.push(item);
+    }
+  }
+
+  localStorage.setItem('wrr_offline_orders', JSON.stringify(remaining));
+  if (remaining.length === 0) {
+    alert('Semua transaksi offline berhasil disinkronkan ke server!');
+    loadCatalog();
+    loadShiftHistory();
   }
 }
 
