@@ -1,22 +1,17 @@
-/**
- * Mengambil ringkasan laporan keuangan harian
- */
 function getDailyFinancialReport(dateString) {
   try {
     const db = getDb();
     const targetDateStr = dateString || Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
 
-    // 1. Ambil modal menu (HPP)
     const sheetMenu = db.getSheetByName('Menu');
     const menuValues = sheetMenu.getDataRange().getValues();
     menuValues.shift();
 
     const menuCostMap = new Map();
     menuValues.forEach(row => {
-      menuCostMap.set(String(row[0]), Number(row[3]) || 0);
+      menuCostMap.set(String(row[0]), Number(row[4]) || 0); // row[4] = harga_modal
     });
 
-    // 2. Ambil transaksi yang selesai pada tanggal terpilih
     const sheetPesanan = db.getSheetByName('Pesanan');
     const pesananValues = sheetPesanan.getDataRange().getValues();
     pesananValues.shift();
@@ -25,13 +20,15 @@ function getDailyFinancialReport(dateString) {
     let totalOmset = 0;
     let totalTransaksi = 0;
     const paymentBreakdown = { Tunai: 0, QRIS: 0, Transfer: 0 };
+    const shiftBreakdown = { Pagi: 0, Malam: 0 };
 
     pesananValues.forEach(row => {
       const orderId = String(row[0]);
       const rawDate = row[1];
-      const status = String(row[6]);
-      const total = Number(row[4]) || 0;
-      const paymentMethod = String(row[5]);
+      const shift = String(row[2]);
+      const total = Number(row[6]) || 0;
+      const paymentMethod = String(row[7]);
+      const status = String(row[8]);
 
       if (rawDate instanceof Date && status === 'Selesai') {
         const orderDateStr = Utilities.formatDate(rawDate, Session.getScriptTimeZone(), 'yyyy-MM-dd');
@@ -40,11 +37,11 @@ function getDailyFinancialReport(dateString) {
           totalOmset += total;
           totalTransaksi++;
           paymentBreakdown[paymentMethod] = (paymentBreakdown[paymentMethod] || 0) + total;
+          shiftBreakdown[shift] = (shiftBreakdown[shift] || 0) + total;
         }
       }
     });
 
-    // 3. Kalkulasi total HPP dari item yang terjual
     const sheetDetail = db.getSheetByName('Detail_Pesanan');
     const detailValues = sheetDetail.getDataRange().getValues();
     detailValues.shift();
@@ -61,7 +58,6 @@ function getDailyFinancialReport(dateString) {
       }
     });
 
-    // 4. Ambil beban pengeluaran operasional
     const sheetPengeluaran = db.getSheetByName('Pengeluaran');
     const pengeluaranValues = sheetPengeluaran.getDataRange().getValues();
     pengeluaranValues.shift();
@@ -84,7 +80,6 @@ function getDailyFinancialReport(dateString) {
       }
     });
 
-    // 5. Kalkulasi Laba Kotor dan Bersih
     const labaKotor = totalOmset - totalHpp;
     const labaBersih = labaKotor - totalPengeluaran;
     const marginLabaBersih = totalOmset > 0 ? ((labaBersih / totalOmset) * 100).toFixed(1) : 0;
@@ -102,6 +97,7 @@ function getDailyFinancialReport(dateString) {
         totalTransaksi: totalTransaksi
       },
       metodeBayar: paymentBreakdown,
+      shiftOmset: shiftBreakdown,
       daftarPengeluaran: expenseList
     };
   } catch (err) {
@@ -109,9 +105,6 @@ function getDailyFinancialReport(dateString) {
   }
 }
 
-/**
- * Mencatat beban pengeluaran harian
- */
 function recordExpense(payload) {
   try {
     const db = getDb();

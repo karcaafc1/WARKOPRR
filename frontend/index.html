@@ -2,100 +2,231 @@
 <html lang="id">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WARKOP RR - Kasir & POS</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>WARKOP RR - Kasir Mobile</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="container-fluid">
-    <div class="row">
-      <!-- Sisi Kiri: Menu -->
-      <div class="col-md-8 py-3">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-          <h3 class="fw-bold mb-0">WARKOP RR ☕</h3>
-          <input type="text" id="searchBox" class="form-control w-50" placeholder="Cari kopi, mie, cemilan..." onkeyup="filterMenu()">
-        </div>
-        <div class="row g-3" id="menuContainer">
-          <div class="text-center py-5 text-muted">Memuat menu dari cloud...</div>
-        </div>
+
+  <!-- Top Navbar Mobile -->
+  <nav class="navbar navbar-dark bg-dark px-3 py-2 sticky-top shadow-sm">
+    <div class="d-flex align-items-center gap-2">
+      <span class="navbar-brand mb-0 h6 fw-bold">WARKOP RR ☕</span>
+      <span class="badge bg-secondary" id="badgeRole">Kasir</span>
+    </div>
+
+    <!-- Shift Controls & Owner Access -->
+    <div class="d-flex align-items-center gap-2">
+      <div class="btn-group btn-group-sm" role="group">
+        <input type="radio" class="btn-check" name="shiftOpt" id="shiftPagi" value="Pagi" checked onchange="updateShiftUI()">
+        <label class="btn btn-outline-warning" for="shiftPagi">Pagi</label>
+        <input type="radio" class="btn-check" name="shiftOpt" id="shiftMalam" value="Malam" onchange="updateShiftUI()">
+        <label class="btn btn-outline-info" for="shiftMalam">Malam</label>
+      </div>
+      <div class="form-check form-switch m-0 text-white small">
+        <input class="form-check-input" type="checkbox" id="checkLembur">
+        <label class="form-check-label d-none d-sm-inline" for="checkLembur">Lembur</label>
+      </div>
+      <button class="btn btn-sm btn-outline-light" onclick="toggleRoleModal()">⚙️</button>
+    </div>
+  </nav>
+
+  <!-- Segmented Tabs (Khusus Layar HP) -->
+  <div class="container-fluid py-2 bg-white border-bottom">
+    <ul class="nav nav-pills nav-fill small gap-1" id="mainTab" role="tablist">
+      <li class="nav-item">
+        <button class="nav-link active py-1" id="tab-menu-btn" onclick="switchView('menu')">Menu</button>
+      </li>
+      <li class="nav-item">
+        <button class="nav-link py-1" id="tab-cart-btn" onclick="switchView('cart')">
+          Keranjang <span class="badge bg-danger rounded-pill" id="cartCountBadge">0</span>
+        </button>
+      </li>
+      <li class="nav-item">
+        <button class="nav-link py-1" id="tab-history-btn" onclick="switchView('history')">Riwayat</button>
+      </li>
+      <li class="nav-item" id="ownerTabNav" style="display: none;">
+        <button class="nav-link py-1 text-success fw-bold" id="tab-owner-btn" onclick="switchView('owner')">Laporan 📊</button>
+      </li>
+    </ul>
+  </div>
+
+  <main class="container-fluid pb-5 mb-5 pt-2">
+    <!-- VIEW 1: KATALOG MENU -->
+    <section id="viewMenu">
+      <div class="d-flex gap-2 mb-2">
+        <input type="text" id="searchBox" class="form-control form-control-sm" placeholder="Cari kopi, indomie..." onkeyup="filterMenu()">
+        <button class="btn btn-sm btn-danger text-nowrap" data-bs-toggle="modal" data-bs-target="#expenseModal">+ Beban</button>
       </div>
 
-      <!-- Sisi Kanan: Order Kasir -->
-      <div class="col-md-4 order-sidebar p-3 d-flex flex-column">
-        <div class="d-flex justify-content-between align-items-center border-bottom pb-2 mb-2">
-          <h5 class="fw-bold mb-0">Pesanan Aktif</h5>
-          <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#expenseModal">
-            + Catat Beban
-          </button>
-        </div>
+      <!-- Kategori Filter -->
+      <div class="d-flex gap-1 overflow-auto pb-2 mb-2 category-scroll">
+        <button class="btn btn-sm btn-dark category-btn active" onclick="filterCategory('Semua')">Semua</button>
+        <button class="btn btn-sm btn-outline-secondary category-btn" onclick="filterCategory('Minuman')">Minuman</button>
+        <button class="btn btn-sm btn-outline-secondary category-btn" onclick="filterCategory('Makanan')">Makanan</button>
+        <button class="btn btn-sm btn-outline-secondary category-btn" onclick="filterCategory('Tambahan')">Add-on</button>
+      </div>
 
+      <div class="row g-2" id="menuContainer">
+        <div class="text-center py-5 text-muted">Menghubungkan server...</div>
+      </div>
+    </section>
+
+    <!-- VIEW 2: KERANJANG CHECKOUT -->
+    <section id="viewCart" style="display: none;">
+      <div class="card p-3 shadow-sm border-0 mb-3">
         <div class="row g-2 mb-2">
-          <div class="col-6">
+          <div class="col-7">
             <input type="text" id="custName" class="form-control form-control-sm" placeholder="Nama Pelanggan">
           </div>
-          <div class="col-6">
-            <input type="number" id="tableNo" class="form-control form-control-sm" placeholder="No. Meja">
+          <div class="col-5">
+            <input type="text" id="tableNo" class="form-control form-control-sm" placeholder="No. Meja">
           </div>
         </div>
 
-        <div class="flex-grow-1 overflow-auto border-bottom py-2" id="cartList">
-          <div class="text-center text-muted small py-4">Belum ada item dipilih</div>
+        <div id="cartList" class="my-2 border-top border-bottom py-2">
+          <div class="text-center text-muted py-4 small">Keranjang masih kosong</div>
         </div>
-        
-        <div class="pt-3">
-          <div class="d-flex justify-content-between fw-bold mb-2 fs-5">
-            <span>Total:</span>
-            <span id="grandTotal" class="text-primary">Rp 0</span>
+
+        <div class="d-flex justify-content-between align-items-center fw-bold fs-5 my-2">
+          <span>Total:</span>
+          <span class="text-primary" id="grandTotal">Rp 0</span>
+        </div>
+
+        <select id="payMethod" class="form-select form-select-sm mb-3">
+          <option value="Tunai">Tunai</option>
+          <option value="QRIS">QRIS</option>
+          <option value="Transfer">Transfer</option>
+        </select>
+
+        <button class="btn btn-dark w-100 py-2 fw-bold" id="btnCheckout" onclick="processCheckout()">
+          Selesaikan Pesanan
+        </button>
+      </div>
+    </section>
+
+    <!-- VIEW 3: RIWAYAT TRANSAKSI KASIR -->
+    <section id="viewHistory" style="display: none;">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h6 class="fw-bold mb-0">Riwayat Pesanan Terbaru</h6>
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadHistory()">Refresh</button>
+      </div>
+      <div class="list-group shadow-sm" id="historyList">
+        <div class="text-center py-4 text-muted small">Memuat riwayat...</div>
+      </div>
+    </section>
+
+    <!-- VIEW 4: LAPORAN KHUSUS OWNER -->
+    <section id="viewOwner" style="display: none;">
+      <div class="card p-3 shadow-sm border-0 mb-3">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h6 class="fw-bold mb-0 text-success">Laporan Finansial (Owner)</h6>
+          <input type="date" id="reportDate" class="form-control form-control-sm w-auto" onchange="loadReport()">
+        </div>
+
+        <div class="row g-2 text-center mb-3">
+          <div class="col-6">
+            <div class="p-2 border rounded bg-light">
+              <small class="text-muted d-block">Omset Penjualan</small>
+              <span class="fw-bold text-primary fs-6" id="valOmset">Rp 0</span>
+            </div>
           </div>
-          <select id="payMethod" class="form-select mb-3">
-            <option value="Tunai">Tunai</option>
-            <option value="QRIS">QRIS</option>
-            <option value="Transfer">Transfer</option>
-          </select>
-          <button class="btn btn-dark w-100 py-2 fw-semibold" id="btnCheckout" onclick="processCheckout()">
-            Selesaikan Transaksi
-          </button>
+          <div class="col-6">
+            <div class="p-2 border rounded bg-light">
+              <small class="text-muted d-block">HPP (Modal Bahan)</small>
+              <span class="fw-bold text-secondary fs-6" id="valHpp">Rp 0</span>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="p-2 border rounded bg-light">
+              <small class="text-muted d-block">Beban Operasional</small>
+              <span class="fw-bold text-danger fs-6" id="valOps">Rp 0</span>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="p-2 border rounded bg-light">
+              <small class="text-muted d-block">Laba Bersih (Net)</small>
+              <span class="fw-bold text-success fs-6" id="valNet">Rp 0</span>
+            </div>
+          </div>
+        </div>
+
+        <h6 class="small fw-bold text-muted mb-1">Omset Berdasarkan Shift:</h6>
+        <div class="d-flex justify-content-around bg-light p-2 rounded mb-2 small">
+          <span>Pagi: <b id="shiftOmsetPagi">Rp 0</b></span>
+          <span>Malam: <b id="shiftOmsetMalam">Rp 0</b></span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Bottom Floating Bar Keranjang (HP) -->
+  <div class="fixed-bottom bg-white border-top p-2 shadow d-md-none" id="mobileCartBar" style="display: none;">
+    <div class="d-flex justify-content-between align-items-center">
+      <div>
+        <small class="text-muted d-block">Total Bayar:</small>
+        <span class="fw-bold text-primary" id="mobileBarTotal">Rp 0</span>
+      </div>
+      <button class="btn btn-dark btn-sm px-3 py-2 fw-semibold" onclick="switchView('cart')">
+        Lihat Keranjang (<span id="mobileBarQty">0</span>)
+      </button>
+    </div>
+  </div>
+
+  <!-- Modal PIN Owner -->
+  <div class="modal fade" id="pinModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+      <div class="modal-content border-0 shadow">
+        <div class="modal-header py-2 bg-dark text-white">
+          <h6 class="modal-title small fw-bold">Otorisasi Mode Owner</h6>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body text-center">
+          <p class="small text-muted mb-2">Masukkan 4 digit PIN Owner untuk melihat laporan laba-rugi:</p>
+          <input type="password" id="inputPin" class="form-control text-center fs-4 letter-spacing" maxlength="6" placeholder="****">
+          <button class="btn btn-success w-100 mt-3" onclick="submitOwnerPin()">Masuk Mode Owner</button>
+          <button class="btn btn-link btn-sm text-secondary w-100 mt-1" onclick="switchRoleToKasir()">Kembali ke Mode Kasir</button>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Modal Catat Pengeluaran Beban -->
-  <div class="modal fade" id="expenseModal" tabindex="-1" aria-hidden="true">
+  <!-- Modal Beban Operasional -->
+  <div class="modal fade" id="expenseModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
       <div class="modal-content border-0 shadow">
-        <div class="modal-header bg-danger text-white">
+        <div class="modal-header bg-danger text-white py-2">
           <h6 class="modal-title fw-bold">Catat Beban Operasional</h6>
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
         </div>
         <form id="expenseForm" onsubmit="submitExpense(event)">
           <div class="modal-body">
-            <div class="mb-3">
-              <label class="form-label small fw-semibold">Kategori</label>
-              <select id="expCategory" class="form-select" required>
-                <option value="Bahan Baku Habis">Bahan Baku (Es, Gas, Galon)</option>
+            <div class="mb-2">
+              <label class="small fw-semibold">Kategori</label>
+              <select id="expCategory" class="form-select form-select-sm" required>
+                <option value="Bahan Baku Habis">Bahan Baku (Es, Gas LPG, Galon)</option>
                 <option value="Kemasan">Kemasan (Cup, Sedotan, Plastik)</option>
-                <option value="Operasional">Kebersihan & Toko</option>
+                <option value="Operasional">Kebersihan & Operasional</option>
                 <option value="Lain-lain">Lain-lain</option>
               </select>
             </div>
-            <div class="mb-3">
-              <label class="form-label small fw-semibold">Nominal (Rp)</label>
-              <input type="number" id="expAmount" class="form-control" placeholder="0" min="500" required>
-            </div>
-            <div class="mb-3">
-              <label class="form-label small fw-semibold">Deskripsi</label>
-              <textarea id="expDescription" class="form-control" rows="2" placeholder="Contoh: Es kristal 2 karung" required></textarea>
+            <div class="mb-2">
+              <label class="small fw-semibold">Nominal (Rp)</label>
+              <input type="number" id="expAmount" class="form-control form-control-sm" placeholder="0" min="500" required>
             </div>
             <div class="mb-2">
-              <label class="form-label small fw-semibold">Kasir / PIC</label>
-              <input type="text" id="expPic" class="form-control" placeholder="Nama Kasir" required>
+              <label class="small fw-semibold">Deskripsi</label>
+              <textarea id="expDescription" class="form-control form-control-sm" rows="2" placeholder="Contoh: Es kristal 2 karung" required></textarea>
+            </div>
+            <div class="mb-2">
+              <label class="small fw-semibold">PIC / Kasir</label>
+              <input type="text" id="expPic" class="form-control form-control-sm" placeholder="Nama Kasir" required>
             </div>
           </div>
-          <div class="modal-footer bg-light py-2">
+          <div class="modal-footer py-1 bg-light">
             <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Batal</button>
-            <button type="submit" id="btnSaveExpense" class="btn btn-sm btn-danger fw-semibold">Simpan</button>
+            <button type="submit" id="btnSaveExpense" class="btn btn-sm btn-danger">Simpan</button>
           </div>
         </form>
       </div>

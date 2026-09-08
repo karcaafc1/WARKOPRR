@@ -1,49 +1,86 @@
-// URL Web App Google Apps Script Anda (diperbarui setelah deploy web app)
-const GAS_API_URL = 'ISI_DENGAN_URL_WEB_APP_GAS_ANDA';
+// GANTI DENGAN URL WEB APP DARI GOOGLE APPS SCRIPT ANDA
+const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbxvKLMDVAJatI0y-03NJK50lJ6-WUs1II54pH5oitkeHs4bC5G82cpxWXFTyI5zOC3c/exec';
 
 let menuList = [];
 let cart = [];
+let currentCategory = 'Semua';
+let isOwnerMode = false;
+let savedOwnerPin = '';
 
 window.addEventListener('DOMContentLoaded', () => {
   loadMenu();
+  loadHistory();
+  document.getElementById('reportDate').value = new Date().toISOString().split('T')[0];
 });
+
+function switchView(viewName) {
+  ['menu', 'cart', 'history', 'owner'].forEach(v => {
+    const el = document.getElementById(`view${v.charAt(0).toUpperCase() + v.slice(1)}`);
+    const btn = document.getElementById(`tab-${v}-btn`);
+    if (el) el.style.display = (v === viewName) ? 'block' : 'none';
+    if (btn) btn.classList.toggle('active', v === viewName);
+  });
+
+  if (viewName === 'history') loadHistory();
+  if (viewName === 'owner') loadReport();
+}
 
 async function loadMenu() {
   const container = document.getElementById('menuContainer');
   try {
     const res = await fetch(`${GAS_API_URL}?action=getMenu`);
     const result = await res.json();
-    
     if (result.status === 'SUCCESS') {
       menuList = result.data;
-      renderMenu(menuList);
+      renderMenu();
     } else {
-      container.innerHTML = `<div class="col-12 text-center text-danger py-4">Gagal memuat: ${result.message}</div>`;
+      container.innerHTML = `<div class="col-12 text-center text-danger py-4">${result.message}</div>`;
     }
   } catch (err) {
-    container.innerHTML = `<div class="col-12 text-center text-muted py-4">Menghubungkan ke server backend...</div>`;
+    container.innerHTML = `<div class="col-12 text-center text-muted py-4">Gagal koneksi. Periksa URL API di app.js</div>`;
   }
 }
 
-function renderMenu(items) {
+function renderMenu() {
   const container = document.getElementById('menuContainer');
-  if (!items.length) {
-    container.innerHTML = `<div class="col-12 text-center text-muted py-4">Tidak ada menu aktif.</div>`;
+  const term = document.getElementById('searchBox').value.toLowerCase();
+
+  const filtered = menuList.filter(item => {
+    const matchCat = (currentCategory === 'Semua') || (item.kategori === currentCategory);
+    const matchTerm = item.nama.toLowerCase().includes(term) || item.varian.toLowerCase().includes(term);
+    return matchCat && matchTerm;
+  });
+
+  if (!filtered.length) {
+    container.innerHTML = `<div class="col-12 text-center text-muted py-4">Menu tidak ditemukan</div>`;
     return;
   }
 
-  container.innerHTML = items.map(item => `
-    <div class="col-md-4 col-sm-6 menu-item-card" data-name="${item.nama.toLowerCase()}">
-      <div class="card card-menu h-100 p-3 shadow-sm border-0" onclick="addToCart('${item.id}')">
-        <span class="badge bg-secondary w-auto align-self-start mb-2">${item.kategori}</span>
-        <h6 class="fw-bold mb-1">${item.nama}</h6>
-        <div class="d-flex justify-content-between align-items-center text-muted small mt-2">
-          <span class="fw-semibold text-dark">Rp ${item.harga.toLocaleString('id-ID')}</span>
-          <span>Stok: ${item.stok}</span>
+  container.innerHTML = filtered.map(item => `
+    <div class="col-6 col-md-4 col-lg-3">
+      <div class="card card-menu h-100 p-2 shadow-sm" onclick="addToCart('${item.id}')">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <span class="badge bg-secondary badge-varian">${item.varian}</span>
+          <small class="text-muted">Stok: ${item.stok}</small>
         </div>
+        <h6 class="fw-bold mb-1 text-truncate" style="font-size: 0.95rem;">${item.nama}</h6>
+        <div class="text-primary fw-bold small">Rp ${item.harga.toLocaleString('id-ID')}</div>
       </div>
     </div>
   `).join('');
+}
+
+function filterCategory(cat) {
+  currentCategory = cat;
+  document.querySelectorAll('.category-btn').forEach(btn => {
+    btn.classList.toggle('btn-dark', btn.innerText.includes(cat));
+    btn.classList.toggle('btn-outline-secondary', !btn.innerText.includes(cat));
+  });
+  renderMenu();
+}
+
+function filterMenu() {
+  renderMenu();
 }
 
 function addToCart(id) {
@@ -55,84 +92,185 @@ function addToCart(id) {
     exists.qty++;
     exists.subtotal = exists.qty * exists.harga;
   } else {
-    cart.push({ ...item, qty: 1, subtotal: item.harga });
+    cart.push({ ...item, qty: 1, subtotal: item.harga, notes: '' });
   }
-  renderCart();
+  updateCartUI();
 }
 
-function renderCart() {
+function updateCartUI() {
   const container = document.getElementById('cartList');
+  const totalEl = document.getElementById('grandTotal');
+  const badge = document.getElementById('cartCountBadge');
+  const bar = document.getElementById('mobileCartBar');
+  const barTotal = document.getElementById('mobileBarTotal');
+  const barQty = document.getElementById('mobileBarQty');
+
+  const totalQty = cart.reduce((acc, c) => acc + c.qty, 0);
+  const totalBayar = cart.reduce((acc, c) => acc + c.subtotal, 0);
+
+  badge.innerText = totalQty;
+  barQty.innerText = totalQty;
+  totalEl.innerText = 'Rp ' + totalBayar.toLocaleString('id-ID');
+  barTotal.innerText = 'Rp ' + totalBayar.toLocaleString('id-ID');
+
+  bar.style.display = totalQty > 0 ? 'block' : 'none';
+
   if (!cart.length) {
-    container.innerHTML = `<div class="text-center text-muted small py-4">Belum ada item dipilih</div>`;
-    document.getElementById('grandTotal').innerText = 'Rp 0';
+    container.innerHTML = `<div class="text-center text-muted py-4 small">Keranjang masih kosong</div>`;
     return;
   }
 
-  let total = 0;
-  container.innerHTML = cart.map((c, i) => {
-    total += c.subtotal;
-    return `
-      <div class="d-flex justify-content-between align-items-center mb-2 small border-bottom pb-2">
-        <div>
-          <strong>${c.nama}</strong><br>
-          <span class="text-muted">${c.qty}x @ Rp ${c.harga.toLocaleString('id-ID')}</span>
-        </div>
-        <div class="text-end">
-          <div class="fw-semibold mb-1">Rp ${c.subtotal.toLocaleString('id-ID')}</div>
-          <button class="btn btn-sm btn-outline-danger py-0 px-2" onclick="removeItem(${i})">&times;</button>
-        </div>
+  container.innerHTML = cart.map((c, i) => `
+    <div class="d-flex justify-content-between align-items-center py-2 border-bottom small">
+      <div>
+        <div class="fw-bold">${c.nama} (${c.varian})</div>
+        <div class="text-muted">${c.qty}x @ Rp ${c.harga.toLocaleString('id-ID')}</div>
       </div>
-    `;
-  }).join('');
-  document.getElementById('grandTotal').innerText = 'Rp ' + total.toLocaleString('id-ID');
+      <div class="d-flex align-items-center gap-2">
+        <span class="fw-semibold">Rp ${c.subtotal.toLocaleString('id-ID')}</span>
+        <button class="btn btn-sm btn-outline-danger py-0 px-2" onclick="removeItem(${i})">&minus;</button>
+      </div>
+    </div>
+  `).join('');
 }
 
 function removeItem(idx) {
-  cart.splice(idx, 1);
-  renderCart();
-}
-
-function filterMenu() {
-  const term = document.getElementById('searchBox').value.toLowerCase();
-  document.querySelectorAll('.menu-item-card').forEach(el => {
-    el.style.display = el.getAttribute('data-name').includes(term) ? '' : 'none';
-  });
+  if (cart[idx].qty > 1) {
+    cart[idx].qty--;
+    cart[idx].subtotal = cart[idx].qty * cart[idx].harga;
+  } else {
+    cart.splice(idx, 1);
+  }
+  updateCartUI();
 }
 
 async function processCheckout() {
-  if (!cart.length) return alert('Pilih minimal 1 menu!');
+  if (!cart.length) return alert('Keranjang masih kosong!');
   const btn = document.getElementById('btnCheckout');
   btn.disabled = true;
   btn.innerText = 'Memproses...';
 
   const payload = {
-    customerName: document.getElementById('custName').value || 'Pelanggan Walk-in',
-    tableNumber: document.getElementById('tableNo').value || '-',
+    shift: document.querySelector('input[name="shiftOpt"]:checked').value,
+    isOvertime: document.getElementById('checkLembur').checked,
+    customerName: document.getElementById('custName').value.trim() || 'Walk-in',
+    tableNumber: document.getElementById('tableNo').value.trim() || '-',
     paymentMethod: document.getElementById('payMethod').value,
-    totalAmount: cart.reduce((acc, cur) => acc + cur.subtotal, 0),
-    items: cart
+    totalAmount: cart.reduce((acc, c) => acc + c.subtotal, 0),
+    items: cart,
+    cashier: isOwnerMode ? 'Owner' : 'Kasir'
   };
 
   try {
     const res = await fetch(GAS_API_URL, {
       method: 'POST',
-      body: JSON.stringify({ action: 'submitOrder', payload: payload })
+      body: JSON.stringify({ action: 'submitOrder', payload })
     });
-    const data = await res.json();
-
-    if (data.status === 'SUCCESS') {
-      alert('Transaksi Berhasil! ID: ' + data.orderId);
+    const result = await res.json();
+    if (result.status === 'SUCCESS') {
+      alert(`Pesanan Sukses! ID: ${result.orderId}`);
       cart = [];
-      renderCart();
+      document.getElementById('custName').value = '';
+      document.getElementById('tableNo').value = '';
+      updateCartUI();
+      switchView('menu');
       loadMenu();
     } else {
-      alert('Gagal: ' + data.message);
+      alert('Gagal: ' + result.message);
     }
   } catch (err) {
     alert('Koneksi bermasalah: ' + err.message);
   } finally {
     btn.disabled = false;
-    btn.innerText = 'Selesaikan Transaksi';
+    btn.innerText = 'Selesaikan Pesanan';
+  }
+}
+
+async function loadHistory() {
+  const container = document.getElementById('historyList');
+  try {
+    const res = await fetch(`${GAS_API_URL}?action=getHistory&limit=25`);
+    const result = await res.json();
+    if (result.status === 'SUCCESS') {
+      if (!result.data.length) {
+        container.innerHTML = `<div class="text-center py-4 text-muted small">Belum ada transaksi hari ini</div>`;
+        return;
+      }
+      container.innerHTML = result.data.map(o => `
+        <div class="list-group-item d-flex justify-content-between align-items-center py-2 small">
+          <div>
+            <span class="fw-bold">${o.id}</span> <span class="badge bg-light text-dark">${o.jam}</span>
+            <div class="text-muted">Meja: ${o.meja} | ${o.pelanggan} (${o.shift}${o.lembur ? ' + Lembur' : ''})</div>
+          </div>
+          <div class="text-end">
+            <div class="fw-bold text-success">Rp ${o.total.toLocaleString('id-ID')}</div>
+            <span class="badge bg-secondary">${o.metode}</span>
+          </div>
+        </div>
+      `).join('');
+    }
+  } catch (e) {
+    container.innerHTML = `<div class="text-center py-4 text-danger small">Gagal memuat riwayat</div>`;
+  }
+}
+
+function toggleRoleModal() {
+  const modal = new bootstrap.Modal(document.getElementById('pinModal'));
+  modal.show();
+}
+
+async function submitOwnerPin() {
+  const pin = document.getElementById('inputPin').value;
+  try {
+    const res = await fetch(GAS_API_URL, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'verifyPin', pin })
+    });
+    const result = await res.json();
+    if (result.status === 'SUCCESS') {
+      isOwnerMode = true;
+      savedOwnerPin = pin;
+      document.getElementById('badgeRole').innerText = 'Owner';
+      document.getElementById('badgeRole').className = 'badge bg-success';
+      document.getElementById('ownerTabNav').style.display = 'block';
+      bootstrap.Modal.getInstance(document.getElementById('pinModal')).hide();
+      document.getElementById('inputPin').value = '';
+      switchView('owner');
+    } else {
+      alert('PIN Salah!');
+    }
+  } catch (e) {
+    alert('Verifikasi PIN gagal');
+  }
+}
+
+function switchRoleToKasir() {
+  isOwnerMode = false;
+  savedOwnerPin = '';
+  document.getElementById('badgeRole').innerText = 'Kasir';
+  document.getElementById('badgeRole').className = 'badge bg-secondary';
+  document.getElementById('ownerTabNav').style.display = 'none';
+  bootstrap.Modal.getInstance(document.getElementById('pinModal')).hide();
+  switchView('menu');
+}
+
+async function loadReport() {
+  if (!isOwnerMode) return;
+  const date = document.getElementById('reportDate').value;
+  try {
+    const res = await fetch(`${GAS_API_URL}?action=getReport&date=${date}&pin=${savedOwnerPin}`);
+    const data = await res.json();
+    if (data.status === 'SUCCESS') {
+      const r = data.ringkasan;
+      document.getElementById('valOmset').innerText = 'Rp ' + r.omset.toLocaleString('id-ID');
+      document.getElementById('valHpp').innerText = 'Rp ' + r.hpp.toLocaleString('id-ID');
+      document.getElementById('valOps').innerText = 'Rp ' + r.pengeluaran.toLocaleString('id-ID');
+      document.getElementById('valNet').innerText = 'Rp ' + r.labaBersih.toLocaleString('id-ID');
+      document.getElementById('shiftOmsetPagi').innerText = 'Rp ' + (data.shiftOmset.Pagi || 0).toLocaleString('id-ID');
+      document.getElementById('shiftOmsetMalam').innerText = 'Rp ' + (data.shiftOmset.Malam || 0).toLocaleString('id-ID');
+    }
+  } catch (e) {
+    alert('Gagal mengambil laporan');
   }
 }
 
@@ -140,7 +278,6 @@ async function submitExpense(e) {
   e.preventDefault();
   const btn = document.getElementById('btnSaveExpense');
   btn.disabled = true;
-  btn.innerText = 'Menyimpan...';
 
   const payload = {
     kategori: document.getElementById('expCategory').value,
@@ -152,22 +289,18 @@ async function submitExpense(e) {
   try {
     const res = await fetch(GAS_API_URL, {
       method: 'POST',
-      body: JSON.stringify({ action: 'recordExpense', payload: payload })
+      body: JSON.stringify({ action: 'recordExpense', payload })
     });
-    const data = await res.json();
-
-    if (data.status === 'SUCCESS') {
-      const modal = bootstrap.Modal.getInstance(document.getElementById('expenseModal'));
-      modal.hide();
+    const result = await res.json();
+    if (result.status === 'SUCCESS') {
+      bootstrap.Modal.getInstance(document.getElementById('expenseModal')).hide();
       document.getElementById('expenseForm').reset();
-      alert('Beban operasional berhasil dicatat!');
-    } else {
-      alert('Gagal: ' + data.message);
+      alert('Pengeluaran berhasil dicatat!');
+      if (isOwnerMode) loadReport();
     }
-  } catch (err) {
-    alert('Gagal mencatat beban: ' + err.message);
+  } catch (e) {
+    alert('Gagal mencatat beban');
   } finally {
     btn.disabled = false;
-    btn.innerText = 'Simpan';
   }
 }
