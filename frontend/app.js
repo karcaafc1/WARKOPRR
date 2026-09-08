@@ -9,7 +9,9 @@ let activePendingItem = null;
 window.addEventListener('DOMContentLoaded', () => {
   restoreSession();
   const dateEl = document.getElementById('reportDatePicker');
-  if (dateEl) dateEl.value = new Date().toISOString().split('T')[0];
+  if (dateEl) {
+    dateEl.value = new Date().toISOString().split('T')[0];
+  }
 });
 
 function restoreSession() {
@@ -57,33 +59,12 @@ async function handleAuthLogin(e) {
   }
 }
 
-  try {
-    const res = await fetch(GAS_API_URL, {
-      method: 'POST',
-      body: JSON.stringify({ action: 'login', payload })
-    });
-    const result = await res.json();
-
-    if (result.status === 'SUCCESS') {
-      currentUser = result.user;
-      localStorage.setItem('wrr_session', JSON.stringify(currentUser));
-      enterApplication();
-    } else {
-      alert(result.message);
-    }
-  } catch (err) {
-    alert('Koneksi backend terputus: ' + err.message);
-  } finally {
-    btn.disabled = false;
-    btn.innerText = 'Masuk ke Kasir';
-  }
-}
-
 async function handleAuthLogout() {
   if (!confirm('Apakah Anda yakin ingin mengakhiri shift & keluar?')) return;
   try {
     await fetch(GAS_API_URL, {
       method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({
         action: 'logout',
         payload: { username: currentUser.username }
@@ -104,7 +85,6 @@ function enterApplication() {
   document.getElementById('headerUserLabel').innerText = 
     `${currentUser.nama} (${currentUser.role} - ${currentUser.shift})`;
 
-  // Hak Akses Khusus Owner
   if (currentUser.role === 'Owner') {
     document.getElementById('dockOwner').style.display = 'flex';
   } else {
@@ -142,6 +122,8 @@ async function loadCatalog() {
     if (result.status === 'SUCCESS') {
       menuCatalog = result.data;
       renderCatalog();
+    } else {
+      container.innerHTML = `<div class="text-center text-danger py-5">${result.message}</div>`;
     }
   } catch (e) {
     container.innerHTML = `<div class="text-center text-danger py-5">Gagal sinkronisasi menu</div>`;
@@ -154,7 +136,7 @@ function renderCatalog() {
 
   const filtered = menuCatalog.filter(item => {
     const matchCat = (currentCategory === 'Semua') || (item.kategori === currentCategory);
-    const matchTerm = item.nama.toLowerCase().includes(term) || item.varian.toLowerCase().includes(term);
+    const matchTerm = item.nama.toLowerCase().includes(term) || (item.varian && item.varian.toLowerCase().includes(term));
     return matchCat && matchTerm;
   });
 
@@ -333,11 +315,12 @@ async function processOrderCheckout() {
   try {
     const res = await fetch(GAS_API_URL, {
       method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({
         action: 'submitOrder',
         token: currentUser.token,
         username: currentUser.username,
-        payload
+        payload: payload
       })
     });
     const result = await res.json();
@@ -364,6 +347,8 @@ async function processOrderCheckout() {
 
 async function loadShiftHistory() {
   const container = document.getElementById('historyOrdersList');
+  if (!container || !currentUser) return;
+
   try {
     const res = await fetch(`${GAS_API_URL}?action=getHistory&token=${currentUser.token}&username=${currentUser.username}&shift=${currentUser.shift}`);
     const result = await res.json();
@@ -404,6 +389,7 @@ async function voidOrderPrompt(orderId) {
   try {
     const res = await fetch(GAS_API_URL, {
       method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({
         action: 'voidOrder',
         token: currentUser.token,
@@ -425,7 +411,7 @@ async function voidOrderPrompt(orderId) {
 }
 
 async function fetchOwnerReport() {
-  if (currentUser.role !== 'Owner') return;
+  if (!currentUser || currentUser.role !== 'Owner') return;
   const date = document.getElementById('reportDatePicker').value;
 
   try {
@@ -461,11 +447,12 @@ async function submitExpenseForm(e) {
   try {
     const res = await fetch(GAS_API_URL, {
       method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({
         action: 'recordExpense',
         token: currentUser.token,
         username: currentUser.username,
-        payload
+        payload: payload
       })
     });
     const result = await res.json();
